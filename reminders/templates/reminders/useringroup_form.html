@@ -1,12 +1,12 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<h2>{% if object %}Edit{% else %}Add{% endif %} User in Group</h2>
+<h2>{% if object %}Редактировать{% else %}Добавить{% endif %} Пользователя в Группу</h2>
 
 <form method="post">
     {% csrf_token %}
     {{ form.as_p }}
-    <button type="submit" class="btn btn-primary">{% if object %}Update{% else %}Create{% endif %} User</button>
-    <a href="{% url 'useringroup_list' %}" class="btn btn-secondary">Cancel</a>
+    <button type="submit" class="btn btn-primary">{% if object %}Обновить{% else %}Добавить{% endif %} Пользователя</button>
+    <a href="{% url 'useringroup_list' %}" class="btn btn-secondary">Отмена</a>
 </form>
 {% endblock %}

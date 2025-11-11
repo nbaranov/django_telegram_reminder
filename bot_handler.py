@@ -34,7 +34,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_type == 'private':
         # Отправляем сообщение только в личку
         await update.message.reply_text(
-            f"Привет! Спасибо, что добавили меня. "
+            f"Привет! Я бот для напоминаний."
             f"Ваш Chat ID: <code>{chat_id}</code>\n"
             f"Добавьте его при создании пользователя на сайте.",
             parse_mode='HTML'
@@ -42,21 +42,16 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         # Отправляем сообщение в группу/супергруппу/канал
         await update.message.reply_text(
-            f"Привет! Я бот для напоминаний. "
+            f"Привет! Я бот для напоминаний."
             f"Мой Chat ID для этого чата: <code>{chat_id}</code>\n"
-            f"Однако, для получения напоминаний, пожалуйста, напишите мне в личные сообщения команду /start.",
+            f"Добавьте его при создании пользователя на сайте.",
             parse_mode='HTML'
         )
-        # Или просто игнорировать команду в группе:
-        # logger.info(f"Ignoring /start command in non-private chat: {chat_id}")
-        # return # (если решишь игнорировать)
 
 def run_bot():
     """Запуск бота."""
     application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
-
     application.add_handler(CommandHandler("start", start_command))
-
     logger.info("Bot started polling...")
     application.run_polling()
 

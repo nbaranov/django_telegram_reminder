@@ -130,18 +130,18 @@
                         <td v-else>
                             <input type="checkbox" v-model="editingReminder.is_completed">
                         </td>
-                        <td>
+                        <td class="row">
                             <div v-if="!editingReminder || editingReminder.id !== reminder.id" class="d-flex gap-1">
-                                <button @click="toggleCompleted(reminder)" class="btn btn-sm" :class="reminder.is_completed ? 'btn-warning' : 'btn-success'">
+                                <button @click="toggleCompleted(reminder)" class="col-4 btn btn-sm" :class="reminder.is_completed ? 'btn-warning' : 'btn-success'">
                                     [[ reminder.is_completed ? 'Отменить' : 'Выполнено' ]]
                                 </button>
-                                <button @click="startEditing(reminder)" class="btn btn-sm btn-primary">Редактировать</button>
-                                <button @click="deleteReminder(reminder)" class="btn btn-sm btn-danger">Удалить</button> <!-- Передаём объект -->
+                                <button @click="startEditing(reminder)" class="col-5 btn btn-sm btn-primary">Редактировать</button>
+                                <button @click="deleteReminder(reminder)" class="col-3 btn btn-sm btn-danger">Удалить</button> <!-- Передаём объект -->
                             </div>
-                            <div v-else class="d-flex gap-1">
-                                <button @click="saveEditing" class="btn btn-sm btn-success">Сохранить</button>
-                                <button @click="cancelEditing" class="btn btn-sm btn-secondary">Отмена</button>
-                            </div>
+                            {% comment %} <div v-else class="d-flex gap-1">
+                                <button @click="saveEditing" class="col-4 btn btn-sm btn-success">Сохранить</button>
+                                <button @click="cancelEditing" class="col-4 btn btn-sm btn-secondary">Отмена</button>
+                            </div> {% endcomment %}
                         </td>
                     </tr>
                     <tr v-if="filteredReminders.length === 0">

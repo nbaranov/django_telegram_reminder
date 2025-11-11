@@ -5,9 +5,6 @@ urlpatterns = [
     # Напоминания
     path('', views.home, name='home'),
     path('reminders/', views.ReminderListView.as_view(), name='reminder_list'),
-    path('reminders/create/', views.ReminderCreateView.as_view(), name='reminder_create'),
-    path('reminders/<int:pk>/update/', views.ReminderUpdateView.as_view(), name='reminder_update'),
-    path('reminders/<int:pk>/delete/', views.ReminderDeleteView.as_view(), name='reminder_delete'),
 
     # Группы
     path('groups/', views.GroupListView.as_view(), name='group_list'),

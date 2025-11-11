@@ -15,29 +15,12 @@ from django.core.paginator import Paginator
 import json
 
 from .models import Reminder, Group, UserInGroup
-from .forms import ReminderForm, GroupForm, UserInGroupForm
+from .forms import GroupForm, UserInGroupForm
 
 
 # Представления для напоминаний
 class ReminderListView(TemplateView):
     template_name = 'reminders/reminder_list_vue.html'
-
-class ReminderCreateView(CreateView):
-    model = Reminder
-    form_class = ReminderForm
-    template_name = 'reminders/reminder_form.html'
-    success_url = reverse_lazy('reminder_list')
-
-class ReminderUpdateView(UpdateView):
-    model = Reminder
-    form_class = ReminderForm
-    template_name = 'reminders/reminder_form.html'
-    success_url = reverse_lazy('reminder_list')
-
-class ReminderDeleteView(DeleteView):
-    model = Reminder
-    template_name = 'reminders/reminder_confirm_delete.html'
-    success_url = reverse_lazy('reminder_list')
 
 # Представления для групп
 class GroupListView(ListView):
@@ -159,7 +142,7 @@ class RemindersAPIView(View):
             page_size = 100
 
         # Запрашиваем все напоминания, сортируем по ID (новые — первыми)
-        reminders = Reminder.objects.all().order_by("-pk").prefetch_related('groups')
+        reminders = Reminder.objects.all().order_by("-due_time", "-pk").prefetch_related('groups')
 
         # Создаём пагинатор
         paginator = Paginator(reminders, page_size)
