@@ -5,6 +5,7 @@ import django
 import logging
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from decouple import config
 
 # Настройка Django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'reminder_project.settings')
@@ -13,7 +14,7 @@ django.setup()
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
-    filename='Dj_Tg_reminder_bot.log',
+    filename=f'{config('LOG_FOLDER')}/Dj_Tg_reminder_bot.log',
     filemode='a',
     format='%(asctime)s %(levelname)s %(message)s'
 )

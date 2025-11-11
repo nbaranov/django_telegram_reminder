@@ -17,7 +17,7 @@ from reminders.models import Reminder, UserInGroup
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
-    filename='Dj_Tg_reminder.log',
+    filename=f'{config('LOG_FOLDER')}/Dj_Tg_reminder.log',
     filemode='a',
     format='%(asctime)s %(levelname)s %(message)s'
 )
@@ -48,6 +48,7 @@ async def send_reminders_data_async(reminders_user_data):
 
 def send_due_reminders():
     now = datetime.now(tz=ZoneInfo("Europe/Moscow"))
+    logger.info(f"Run at: {now}")
     due_reminders = Reminder.objects.filter(due_time__lte=now, is_completed=False)
 
     reminders_user_data = []
@@ -64,4 +65,5 @@ def send_due_reminders():
     logger.info(f"Marked {len(reminder_ids_to_update)} reminders as completed.")
 
 if __name__ == "__main__":
+    print("I'm runed")
     send_due_reminders()
