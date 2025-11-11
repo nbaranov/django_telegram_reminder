@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h2>{% if object %}Edit{% else %}Add{% endif %} Group</h2>
+
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit" class="btn btn-primary">{% if object %}Update{% else %}Create{% endif %} Group</button>
+    <a href="{% url 'group_list' %}" class="btn btn-secondary">Cancel</a>
+</form>
+{% endblock %}

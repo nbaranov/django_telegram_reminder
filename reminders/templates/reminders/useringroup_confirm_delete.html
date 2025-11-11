@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h2>Delete User from Group</h2>
+<p>Are you sure you want to delete the user: "{{ object.name }}" (Telegram ID: {{ object.telegram_id }}) from group "{{ object.group.name }}"?</p>
+
+<form method="post">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-danger">Confirm Delete</button>
+    <a href="{% url 'useringroup_list' %}" class="btn btn-secondary">Cancel</a>
+</form>
+{% endblock %}

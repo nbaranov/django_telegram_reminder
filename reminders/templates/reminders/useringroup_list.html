@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h2>Users in Groups</h2>
+<a href="{% url 'useringroup_create' %}" class="btn btn-success mb-3">Add User</a>
+
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Telegram ID</th>
+            <th>Group</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for user in users %}
+        <tr>
+            <td>{{ user.id }}</td>
+            <td>{{ user.name }}</td>
+            <td>{{ user.telegram_id }}</td>
+            <td>{{ user.group.name }}</td>
+            <td>
+                <a href="{% url 'useringroup_update' user.pk %}" class="btn btn-sm btn-primary">Edit</a>
+                <a href="{% url 'useringroup_delete' user.pk %}" class="btn btn-sm btn-danger">Delete</a>
+            </td>
+        </tr>
+        {% empty %}
+        <tr>
+            <td colspan="5">No users found.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
