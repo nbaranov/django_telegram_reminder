@@ -8,6 +8,9 @@ from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.generic import TemplateView
 from django.shortcuts import get_object_or_404
+from django.utils.dateparse import parse_datetime
+from django.core.exceptions import ValidationError
+from django.core.paginator import Paginator
 
 import json
 
@@ -89,9 +92,84 @@ def home(request):
 
 
 # API Views
+@method_decorator(csrf_exempt, name='dispatch')
 class RemindersAPIView(View):
+ # POST для создания нового напоминания
+    def post(self, request):
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+        # Валидация текста
+        text = data.get('text', '').strip()
+        if not text:
+            return JsonResponse({'error': 'Text is required'}, status=400)
+
+        # Валидация due_time
+        due_time_str = data.get('due_time')
+        if not due_time_str:
+            return JsonResponse({'error': 'Due time is required'}, status=400)
+
+        due_time = parse_datetime(due_time_str)
+        if not due_time:
+            return JsonResponse({'error': 'Invalid due_time format'}, status=400)
+
+        # Валидация groups
+        group_ids = [g['id'] for g in data.get('groups', [])]
+        try:
+            group_ids = [int(id) for id in group_ids]
+        except (ValueError, TypeError):
+            return JsonResponse({'error': 'Invalid group IDs'}, status=400)
+
+        groups = Group.objects.filter(id__in=group_ids)
+        if len(groups) != len(group_ids):
+            return JsonResponse({'error': 'Some group IDs do not exist'}, status=400)
+
+        # Создание напоминания
+        reminder = Reminder.objects.create(
+            text=text,
+            due_time=due_time,
+            is_completed=data.get('is_completed', False)
+        )
+        reminder.groups.set(groups)
+
+        # Возвращаем созданный объект
+        created_data = {
+            'id': reminder.id,
+            'text': reminder.text,
+            'groups': [{'id': g.id, 'name': g.name} for g in reminder.groups.all()],
+            'due_time': reminder.due_time.isoformat(),
+            'is_completed': reminder.is_completed
+        }
+        return JsonResponse(created_data, status=201)
+
     def get(self, request):
-        reminders = Reminder.objects.all().prefetch_related('groups')
+        # Получаем параметры из GET-запроса
+        page = request.GET.get('page', 1)
+        page_size = request.GET.get('page_size', 20)
+
+        try:
+            page = int(page)
+            page_size = int(page_size)
+        except (ValueError, TypeError):
+            return JsonResponse({'error': 'Invalid page or page_size'}, status=400)
+
+        if page_size > 100:  # Ограничим максимальный размер страницы
+            page_size = 100
+
+        # Запрашиваем все напоминания, сортируем по ID (новые — первыми)
+        reminders = Reminder.objects.all().order_by("-pk").prefetch_related('groups')
+
+        # Создаём пагинатор
+        paginator = Paginator(reminders, page_size)
+
+        try:
+            reminders_page = paginator.page(page)
+        except Exception:
+            return JsonResponse({'error': 'Invalid page number'}, status=400)
+
+        # Формируем ответ
         data = {
             'reminders': [
                 {
@@ -101,8 +179,16 @@ class RemindersAPIView(View):
                     'due_time': r.due_time.isoformat(),
                     'is_completed': r.is_completed
                 }
-                for r in reminders
-            ]
+                for r in reminders_page
+            ],
+            'pagination': {
+                'current_page': reminders_page.number,
+                'total_pages': paginator.num_pages,
+                'total_count': paginator.count,
+                'has_next': reminders_page.has_next(),
+                'has_previous': reminders_page.has_previous(),
+                'page_size': page_size
+            }
         }
         return JsonResponse(data)
 

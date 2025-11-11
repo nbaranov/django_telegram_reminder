@@ -10,12 +10,75 @@
 {% endblock %}
 
 {% block content %}
-    <h2>Напоминания (Vue)</h2>
     <div id="reminders-app">
         <div v-if="loading" class="alert alert-info">Загрузка...</div>
         <div v-if="error" class="alert alert-danger">[[ error ]]</div>
 
         <div v-if="!loading">
+            <button v-if="!editingForm.isActive" @click="showCreateForm" class="btn btn-success mb-3">
+                Добавить напоминание
+            </button>
+
+            <!-- Форма создания/редактирования -->
+            <div v-if="editingForm.isActive" class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        [[ editingForm.mode === 'create' ? 'Создать' : 'Редактировать' ]] напоминание
+                    </h5>
+                    <button @click="cancelForm" class="btn btn-sm btn-secondary">&times;</button>
+                </div>
+                <div class="card-body">
+                    <form @submit.prevent="submitForm">
+
+                        <!-- Текст -->
+                        <div class="mb-3">
+                            <label class="form-label">Текст напоминания</label>
+                            <input v-model="editingForm.text" type="text" class="form-control" placeholder="Что нужно напомнить?" required>
+                        </div>
+
+                        <!-- Группы -->
+                        <div class="mb-3">
+                            <label class="form-label">Группы получателей</label>
+                            <multiselect
+                                v-model="editingForm.selectedGroups"
+                                :options="groups"
+                                :multiple="true"
+                                :close-on-select="false"
+                                :clearable="true"
+                                placeholder="Выберите группы..."
+                                label="name"
+                                track-by="id"
+                            >
+                            </multiselect>
+                        </div>
+
+                        <!-- Режим "через" -->
+                        <div class="row g-2 mb-3">
+                            <div class="col-4">
+                                <label>Дни</label>
+                                <input v-model.number="editingForm.days" type="number" class="form-control" min="0" placeholder="Дни">
+                            </div>
+                            <div class="col-4">
+                                <label>Часы</label>
+                                <input v-model.number="editingForm.hours" type="number" class="form-control" min="0" max="23" placeholder="Часы">
+                            </div>
+                            <div class="col-4">
+                                <label>Минуты</label>
+                                <input v-model.number="editingForm.minutes" type="number" class="form-control" min="0" max="59" placeholder="Минуты">
+                            </div>
+                        </div>
+
+                        <!-- Кнопки -->
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-success flex-grow-1">
+                                [[ editingForm.mode === 'create' ? 'Создать' : 'Сохранить' ]]
+                            </button>
+                            <button type="button" @click="cancelForm" class="btn btn-secondary">Отмена</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
             <div class="row mb-3">
                 <div class="col-md-6">
                     <input v-model="filterText" type="text" class="form-control" placeholder="Поиск по тексту...">
@@ -29,15 +92,13 @@
                 </div>
             </div>
 
-            <button @click="createReminder" class="btn btn-success mb-3">Добавить (Django)</button>
-
             <table class="table table-striped">
                 <thead>
                     <tr>
                         <th>ID</th>
                         <th>Текст</th>
                         <th>Группы</th>
-                        <th>Время</th>
+                        <th>До напоминания</th>
                         <th>Статус</th>
                         <th>Действия</th>
                     </tr>
@@ -59,7 +120,7 @@
                                 <option v-for="group in groups" :key="group.id" :value="group.id">[[ group.name ]]</option>
                             </select>
                         </td>
-                        <td v-if="!editingReminder || editingReminder.id !== reminder.id">[[ formatDate(reminder.due_time) ]]</td>
+                        <td v-if="!editingReminder || editingReminder.id !== reminder.id">[[ formatTimeLeft(reminder.due_time) ]]</td>
                         <td v-else>
                             <input v-model="editingReminder.due_time" type="datetime-local" class="form-control">
                         </td>
@@ -70,14 +131,14 @@
                             <input type="checkbox" v-model="editingReminder.is_completed">
                         </td>
                         <td>
-                            <div v-if="!editingReminder || editingReminder.id !== reminder.id">
+                            <div v-if="!editingReminder || editingReminder.id !== reminder.id" class="d-flex gap-1">
                                 <button @click="toggleCompleted(reminder)" class="btn btn-sm" :class="reminder.is_completed ? 'btn-warning' : 'btn-success'">
                                     [[ reminder.is_completed ? 'Отменить' : 'Выполнено' ]]
                                 </button>
                                 <button @click="startEditing(reminder)" class="btn btn-sm btn-primary">Редактировать</button>
                                 <button @click="deleteReminder(reminder)" class="btn btn-sm btn-danger">Удалить</button> <!-- Передаём объект -->
                             </div>
-                            <div v-else>
+                            <div v-else class="d-flex gap-1">
                                 <button @click="saveEditing" class="btn btn-sm btn-success">Сохранить</button>
                                 <button @click="cancelEditing" class="btn btn-sm btn-secondary">Отмена</button>
                             </div>
@@ -89,9 +150,40 @@
                 </tbody>
             </table>
         </div>
+
+
+        <!-- Пагинация -->
+        <div v-if="pagination.total_pages > 1" class="d-flex justify-content-center mt-3">
+            <nav>
+                <ul class="pagination">
+                    <!-- Кнопка "Предыдущая" -->
+                    <li class="page-item" :class="{ disabled: !pagination.has_previous }">
+                        <button class="page-link" @click="goToPrevPage" :disabled="!pagination.has_previous">&laquo; Назад</button>
+                    </li>
+
+                    <!-- Кнопки страниц -->
+                    <li v-for="n in getVisiblePages()" :key="n" class="page-item" :class="{ active: n === pagination.current_page }">
+                        <button class="page-link" @click="goToPage(n)">[[ n ]]</button>
+                    </li>
+
+                    <!-- Кнопка "Следующая" -->
+                    <li class="page-item" :class="{ disabled: !pagination.has_next }">
+                        <button class="page-link" @click="goToNextPage" :disabled="!pagination.has_next">Вперёд &raquo;</button>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+
+        <div class="mt-2 text-center text-muted small">
+            Страница [[ pagination.current_page ]] из [[ pagination.total_pages ]]
+            (всего записей: [[ pagination.total_count ]])
+        </div>
+
+
     </div>
 
     <script src="{% static 'reminders/js/vue.global.prod.js' %}"></script>
+    <script src="{% static 'reminders/js/vue-multiselect.js' %}"></script>
     <script>
         // Формируем базы из существующих URL, убирая ID
         const updateUrlExample = "{% url 'api_update_reminder' pk=12345 %}";
@@ -106,4 +198,7 @@
         };
     </script>
     <script type="module" src="{% static 'reminders/js/reminders_app.js' %}"></script>
+    <script src="{% static 'reminders/js/vue-datepicker.js' %}"></script>
+    <link href="{% static 'reminders/css/vue-datepicker.css' %}" rel="stylesheet">
+
 {% endblock %}
