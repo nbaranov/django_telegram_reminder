@@ -275,11 +275,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const dueTime = new Date(Date.now() + totalMs).toISOString();
 
+                // ✅ Подготовим payload
                 const payload = {
                     text: this.editingForm.text,
                     groups: this.editingForm.selectedGroups.map(g => ({ id: g.id })),
                     due_time: dueTime,
-                    is_completed: false
+                    // ✅ При редактировании сбрасываем статусы
+                    is_completed: false,
+                    sent_at: null, // или не передавать, если бэкенд сам сбрасывает
                 };
 
                 try {
@@ -288,9 +291,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (this.editingForm.mode === 'create') {
                         url = data.remindersApiEndpoint;
                         method = 'POST';
+                        // Для создания sent_at не нужно сбрасывать, т.к. его нет
                     } else {
                         url = `${data.updateReminderBaseUrl}${this.editingForm.id}/`;
                         method = 'PUT';
+                        // ✅ При обновлении сбрасываем статусы
                     }
 
                     const response = await fetch(url, {
@@ -313,6 +318,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     } else {
                         const index = this.reminders.findIndex(r => r.id === result.id);
                         if (index !== -1) {
+                            // ✅ Обновляем локальный объект
                             this.reminders.splice(index, 1, result);
                         }
                     }

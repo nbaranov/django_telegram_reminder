@@ -1,12 +1,111 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<h2>{% if object %}Редактировать{% else %}Добавить{% endif %} Пользователя в Группу</h2>
 
-<form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit" class="btn btn-primary">{% if object %}Обновить{% else %}Добавить{% endif %} Пользователя</button>
-    <a href="{% url 'useringroup_list' %}" class="btn btn-secondary">Отмена</a>
-</form>
+<style>
+    input {
+        width: 100%;
+        }
+    select {
+        width: 100%;
+    }
+</style>
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title mb-0">
+                        {% if object %}
+                            Редактировать пользователя
+                        {% else %}
+                            Добавить пользователя
+                        {% endif %}
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+
+                        {% if form.non_field_errors %}
+                            <div class="alert alert-danger">
+                                {{ form.non_field_errors }}
+                            </div>
+                        {% endif %}
+
+                        <!-- Имя -->
+                        <div class="row mb-3">
+                            <label for="{{ form.name.id_for_label }}" class="col-sm-4 col-form-label">
+                                {{ form.name.label }}
+                            </label>
+                            <div class="col-sm-8">
+                                {{ form.name }}
+                                {% if form.name.errors %}
+                                    <div class="text-danger">
+                                        {{ form.name.errors }}
+                                    </div>
+                                {% endif %}
+                                {% if form.name.help_text %}
+                                    <div class="form-text">{{ form.name.help_text }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Telegram ID -->
+                        <div class="row mb-3">
+                            <label for="{{ form.telegram_id.id_for_label }}" class="col-sm-4 col-form-label">
+                                {{ form.telegram_id.label }}
+                            </label>
+                            <div class="col-sm-8">
+                                {{ form.telegram_id }}
+                                {% if form.telegram_id.errors %}
+                                    <div class="text-danger">
+                                        {{ form.telegram_id.errors }}
+                                    </div>
+                                {% endif %}
+                                {% if form.telegram_id.help_text %}
+                                    <div class="form-text">{{ form.telegram_id.help_text }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Группа -->
+                        <div class="row mb-3">
+                            <label for="{{ form.group.id_for_label }}" class="col-sm-4 col-form-label">
+                                {{ form.group.label }}
+                            </label>
+                            <div class="col-sm-8">
+                                {{ form.group }}
+                                {% if form.group.errors %}
+                                    <div class="text-danger">
+                                        {{ form.group.errors }}
+                                    </div>
+                                {% endif %}
+                                {% if form.group.help_text %}
+                                    <div class="form-text">{{ form.group.help_text }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Кнопки -->
+                        <div class="row mb-3">
+                            <div class="col">
+                                <div class="d-flex gap-2">
+                                    <button type="submit" class="btn btn-success flex-grow-1">
+                                        {% if object %}
+                                            Обновить
+                                        {% else %}
+                                            Добавить
+                                        {% endif %}
+                                    </button>
+                                    <a href="{% url 'useringroup_list' %}" class="btn btn-secondary">Отмена</a>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}

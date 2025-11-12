@@ -162,7 +162,7 @@ class RemindersAPIView(View):
             page_size = 100
 
         # Запрашиваем все напоминания, сортируем по ID (новые — первыми)
-        reminders = Reminder.objects.all().order_by("-due_time", "-pk").prefetch_related('groups')
+        reminders = Reminder.objects.all().order_by("-sent_at", "due_time").prefetch_related('groups')
 
         # Создаём пагинатор
         paginator = Paginator(reminders, page_size)
@@ -234,30 +234,35 @@ class ReminderUpdateView(View):
             if due_time_str:
                 parsed_dt = parse_datetime(due_time_str)
                 if parsed_dt:
-                    # Предполагаем, что строка приходит в той же зоне, что и настройки Django, или в UTC
-                    # Если нужна конкретная зона, добавь преобразование
                     reminder.due_time = parsed_dt
                 else:
                     return JsonResponse({'error': 'Invalid due_time format'}, status=400)
 
             # Обновление ManyToMany требует особого подхода
             group_ids = [g['id'] for g in data.get('groups', [])]
-            # Проверим, что group_ids - это список int
             try:
                 group_ids = [int(id) for id in group_ids]
             except (ValueError, TypeError):
                 return JsonResponse({'error': 'Invalid group IDs'}, status=400)
 
-            # Получаем объекты Group
-            from django.core.exceptions import ObjectDoesNotExist
-            try:
-                groups = Group.objects.filter(id__in=group_ids)
-                # Проверяем, все ли ID существуют
-                if len(groups) != len(group_ids):
-                     return JsonResponse({'error': 'Some group IDs do not exist'}, status=400)
-                reminder.groups.set(groups)
-            except ValueError:
-                return JsonResponse({'error': 'Invalid group IDs'}, status=400)
+            groups = Group.objects.filter(id__in=group_ids)
+            if len(groups) != len(group_ids):
+                return JsonResponse({'error': 'Some group IDs do not exist'}, status=400)
+            reminder.groups.set(groups)
+
+            # ✅ Обновляем is_completed и sent_at ЯВНО, если они пришли в запросе
+            if 'is_completed' in data:
+                reminder.is_completed = data['is_completed']
+            if 'sent_at' in data:
+                sent_at_val = data['sent_at']
+                if sent_at_val:
+                    parsed_sent_at = parse_datetime(sent_at_val)
+                    if parsed_sent_at:
+                        reminder.sent_at = parsed_sent_at
+                    else:
+                        return JsonResponse({'error': 'Invalid sent_at format'}, status=400)
+                else:
+                    reminder.sent_at = None # Явно сбрасываем в NULL
 
             reminder.save()
 
@@ -267,7 +272,8 @@ class ReminderUpdateView(View):
                 'text': reminder.text,
                 'groups': [{'id': g.id, 'name': g.name} for g in reminder.groups.all()],
                 'due_time': reminder.due_time.isoformat(),
-                'is_completed': reminder.is_completed
+                'is_completed': reminder.is_completed,
+                'sent_at': reminder.sent_at.isoformat() if reminder.sent_at else None, # Возвращаем в ответе
             }
             return JsonResponse(updated_data)
 
