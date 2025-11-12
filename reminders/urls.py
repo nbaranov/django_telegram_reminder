@@ -23,4 +23,5 @@ urlpatterns = [
     path('api/groups/', views.GroupsAPIView.as_view(), name='api_groups'),
     path('api/reminders/<int:pk>/', views.ReminderUpdateView.as_view(), name='api_update_reminder'),
     path('api/reminders/delete/<int:pk>/', views.ReminderDeleteView.as_view(), name='api_delete_reminder'),
+    path('api/reminders/send_due/', views.SendDueRemindersAPIView.as_view(), name='api_send_due_reminders'),
 ]

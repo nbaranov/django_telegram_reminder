@@ -22,11 +22,16 @@ document.addEventListener('DOMContentLoaded', () => {
         data() {
             return {
                 reminders: [],
+                remindersBeingSent: [],
+                reminderTimers: {},
                 loading: true,
                 error: null,
                 groups: [],
                 filterCompleted: 'all',
                 filterText: '',
+                isFormActive: false,
+                refreshInterval: null,
+                filterGroup: null,
                 editingForm: {
                     isActive: false,
                     mode: 'create', // или 'edit'
@@ -64,6 +69,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     filtered = filtered.filter(r => r.text.toLowerCase().includes(lowerFilterText));
                 }
 
+                if (this.filterGroup) {
+                    filtered = filtered.filter(r => r.groups.some(g => g.id === this.filterGroup));
+                }
+
                 return filtered;
             },
             statusLabels() {
@@ -89,23 +98,48 @@ document.addEventListener('DOMContentLoaded', () => {
             },
 
             async loadReminders(page = 1) {
+                // console.log(`[loadReminders] Loading page ${page}`);
                 this.loading = true;
                 this.error = null;
                 try {
-                    // Передаём page и page_size в GET-параметрах
                     const response = await fetch(`${data.remindersApiEndpoint}?page=${page}&page_size=20`);
                     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                     const result = await response.json();
 
-                    // Сохраняем пагинацию
                     this.pagination = result.pagination;
 
-                    // Обновляем напоминания
-                    this.reminders = result.reminders.map(rem => ({
+                    const newReminders = result.reminders.map(rem => ({
                         ...rem,
                         updateUrl: `${data.updateReminderBaseUrl}${rem.id}/`,
                         deleteUrl: `${data.deleteReminderBaseUrl}${rem.id}/`
                     }));
+
+                    const updatedReminders = newReminders.map(newRem => {
+                        const oldRem = this.reminders.find(r => r.id === newRem.id);
+                        if (oldRem) {
+                            // Если у старого напоминания был sent_at или api_call_attempted — сохраняем
+                            return {
+                                ...newRem,
+                                sent_at: oldRem.sent_at || newRem.sent_at, // приоритет: если локально был, не перезаписываем
+                                api_call_attempted: oldRem.api_call_attempted || newRem.api_call_attempted,
+                            };
+                        }
+                        return newRem;
+                    });
+
+                    // console.log(`[loadReminders] Updated reminders:`, updatedReminders);
+
+                    this.reminders = updatedReminders;
+                    Object.values(this.reminderTimers).forEach(clearInterval);
+                    this.reminderTimers = {};
+
+                    this.reminders.forEach(reminder => {
+                        if (!reminder.is_completed && !reminder.sent_at) {
+                            // console.log(`[loadReminders] Starting timer for reminder ID: ${reminder.id}`);
+                            this.startReminderTimer(reminder);
+                        }
+                    });
+
                 } catch (err) {
                     console.error('Error loading reminders:', err);
                     this.error = 'Ошибка загрузки напоминаний';
@@ -125,6 +159,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             },
 
+            startReminderTimer(reminder) {
+                const timerId = setInterval(() => {
+                    const now = new Date();
+                    const due = new Date(reminder.due_time);
+                    const diffMs = due - now;
+
+                    if (diffMs <= 0) {
+                        if (!this.remindersBeingSent.includes(reminder.id)) {
+                            this.triggerReminderIfNeeded(reminder.id);
+                        }
+                        clearInterval(this.reminderTimers[reminder.id]);
+                        delete this.reminderTimers[reminder.id];
+                    }
+                }, 1000);
+
+                // Сохраняем ID таймера
+                this.reminderTimers[reminder.id] = timerId;
+            },
+
             async toggleCompleted(reminder) {
                 const newStatus = !reminder.is_completed;
                 reminder.is_completed = newStatus;
@@ -142,7 +195,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (!response.ok) {
                         throw new Error(`HTTP error! status: ${response.status}`);
                     }
-                    console.log(`Reminder ${reminder.id} marked as ${newStatus ? 'completed' : 'pending'}`);
+                    // console.log(`Reminder ${reminder.id} marked as ${newStatus ? 'completed' : 'pending'}`);
                 } catch (err) {
                     console.error('Error updating reminder status:', err);
                     reminder.is_completed = !newStatus; // Откат
@@ -151,6 +204,7 @@ document.addEventListener('DOMContentLoaded', () => {
             },
 
             showCreateForm() {
+                this.isFormActive = true;
                 this.editingForm = {
                     isActive: true,
                     mode: 'create',
@@ -202,6 +256,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Отправка формы (создание или обновление)
             async submitForm() {
+                this.isFormActive = false;
                 if (!this.editingForm.text.trim()) {
                     this.error = 'Текст обязателен';
                     return;
@@ -262,7 +317,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
 
-                    this.cancelForm(); // Скрыть форму после успеха
+                    this.cancelForm(); 
                 } catch (err) {
                     this.error = this.editingForm.mode === 'create'
                         ? 'Ошибка создания напоминания'
@@ -270,12 +325,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             },
 
-            formatTimeLeft(isoString) {
+            formatTimeLeft(isoString, reminderId) {
                 const now = new Date();
                 const due = new Date(isoString);
                 const diffMs = due - now;
 
-                if (diffMs <= 0) return 'Просрочено';
+                // ✅ Логируем
+                const reminder = this.reminders.find(r => r.id === reminderId);
+                // console.log(`[formatTimeLeft] ID: ${reminderId}, diffMs: ${diffMs}, reminder.sent_at: ${reminder?.sent_at}, reminder.is_completed: ${reminder?.is_completed}`);
+
+                if (reminder && reminder.sent_at) { // ✅ Проверяем sent_at
+                    // console.log(`[formatTimeLeft] Returning 'Отправлено в ...' for ID: ${reminderId}`);
+                    return `${this.formatDate(reminder.sent_at)}`;
+                }
+
+                if (diffMs <= 0) {
+                    // console.log(`[formatTimeLeft] Returning 'Отправляется' for ID: ${reminderId}`);
+                    return 'Отправляется';
+                }
 
                 const days = Math.floor(diffMs / 86400000);
                 const hours = Math.floor((diffMs % 86400000) / 3600000);
@@ -293,8 +360,43 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             },
 
+            async triggerReminderIfNeeded(reminderId) {
+                if (this.remindersBeingSent.includes(reminderId)) {
+                    return;
+                }
+
+                this.remindersBeingSent.push(reminderId);
+
+                try {
+                    const response = await fetch(`${data.sendDueRemindersApiEndpoint}`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': data.csrfToken,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ reminder_id: reminderId })
+                    });
+
+                    const result = await response.json();
+                    if (result.status === 'sent') {
+                        const reminder = this.reminders.find(r => r.id === reminderId);
+                        if (reminder) {
+                            reminder.is_completed = true;
+                            reminder.sent_at = new Date().toISOString();
+                        }
+                    }
+                } catch (err) {
+                    console.error('Error triggering reminder:', err);
+                    const index = this.remindersBeingSent.indexOf(reminderId);
+                    if (index !== -1) {
+                        this.remindersBeingSent.splice(index, 1);
+                    }
+                }
+            },
+
             // Отмена формы
             cancelForm() {
+                this.isFormActive = false;
                 this.editingForm.isActive = false;
                 // Не сбрасываем объект полностью — чтобы не сломать реактивность
                 Object.assign(this.editingForm, {
@@ -334,6 +436,7 @@ document.addEventListener('DOMContentLoaded', () => {
             },
 
             editReminderViaForm(reminder) {
+                this.isFormActive = true;
                 const now = new Date();
                 const due = new Date(reminder.due_time);
                 const diffMs = due - now;
@@ -422,17 +525,26 @@ document.addEventListener('DOMContentLoaded', () => {
             await this.loadGroups();
             await this.loadReminders();
 
-            // Запускаем таймер обновления каждую секунду
             this.timerInterval = setInterval(() => {
-                // Просто вызываем forceUpdate, чтобы пересчитать таймеры
-                // Но лучше — обновлять только если есть активные напоминания
                 this.$forceUpdate();
             }, 1000);
+
+            // Таймер обновления списка
+            this.refreshInterval = setInterval(async () => {
+                if (!this.isFormActive) {
+                    await this.loadReminders(this.pagination.current_page);
+                }
+            }, 30000);
         },
         unmounted() {
             if (this.timerInterval) {
                 clearInterval(this.timerInterval);
             }
+            if (this.refreshInterval) {
+                clearInterval(this.refreshInterval);
+            }
+            // Очищаем все таймеры обратного отсчёта (если остались)
+            Object.values(this.reminderTimers).forEach(clearInterval);
         }
     }).mount('#reminders-app');
 });

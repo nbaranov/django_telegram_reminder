@@ -19,6 +19,8 @@ class Reminder(models.Model):
     groups = models.ManyToManyField(Group, related_name='reminders')
     due_time = models.DateTimeField()
     is_completed = models.BooleanField(default=False)
+    is_sending = models.BooleanField(default=False)
+    sent_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         status = "Completed" if self.is_completed else "Pending"

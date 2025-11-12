@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from telegram import Bot
 from telegram.error import Forbidden
 from decouple import config
+from django.db import transaction
 
 # Настройка Django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'reminder_project.settings')
@@ -40,7 +41,7 @@ async def send_reminders_data_async(reminders_user_data):
     ids_to_update = []
     for reminder_obj, user_ids_list in reminders_user_data:
         logger.info(f"Processing reminder: {reminder_obj.text}")
-        tasks = [send_reminder_to_user(tg_id, f"Reminder: {reminder_obj.text}") for tg_id in user_ids_list]
+        tasks = [send_reminder_to_user(tg_id, f"Вы просили напомнить о: {reminder_obj.text}") for tg_id in user_ids_list]
         if tasks:
             await asyncio.gather(*tasks)
         ids_to_update.append(reminder_obj.id)
@@ -49,8 +50,29 @@ async def send_reminders_data_async(reminders_user_data):
 def send_due_reminders():
     now = datetime.now(tz=ZoneInfo("Europe/Moscow"))
     logger.info(f"Run at: {now}")
-    due_reminders = Reminder.objects.filter(due_time__lte=now, is_completed=False)
 
+    # ✅ Атомарно помечаем напоминания как "в процессе отправки"
+    with transaction.atomic():
+        # Выбираем напоминания, которые:
+        # - просрочены
+        # - не завершены
+        # - не помечены как "в процессе отправки"
+        due_reminders = list(
+            Reminder.objects.select_for_update()
+            .filter(
+                due_time__lte=now,
+                is_completed=False,
+                is_sending=False
+            )
+        )
+
+        if not due_reminders:
+            logger.info("No due reminders to send.")
+            return
+
+        Reminder.objects.filter(id__in=[r.id for r in due_reminders]).update(is_sending=True)
+
+    # Теперь обрабатываем отправку вне транзакции
     reminders_user_data = []
     for reminder in due_reminders:
         user_ids = UserInGroup.objects.filter(
@@ -59,11 +81,22 @@ def send_due_reminders():
         user_ids_list = list(user_ids)
         reminders_user_data.append((reminder, user_ids_list))
 
-    reminder_ids_to_update = asyncio.run(send_reminders_data_async(reminders_user_data))
+    if reminders_user_data:
+        reminder_ids_to_update = asyncio.run(send_reminders_data_async(reminders_user_data))
 
-    Reminder.objects.filter(id__in=reminder_ids_to_update).update(is_completed=True)
-    logger.info(f"Marked {len(reminder_ids_to_update)} reminders as completed.")
-
+        Reminder.objects.filter(id__in=reminder_ids_to_update).update(
+            sent_at=now,
+            is_completed=True,
+            is_sending=False 
+        )
+        logger.info(f"Marked {len(reminder_ids_to_update)} reminders as sent and completed.")
+    else:
+        # Если не было напоминаний для отправки, просто сбрасываем is_sending
+        Reminder.objects.filter(id__in=[r.id for r in due_reminders]).update(is_sending=False)
+        logger.info("No user data to send.")
+        
+        
 if __name__ == "__main__":
-    print("I'm runed")
+    logger.info(f"run senc_reminders")
     send_due_reminders()
+    

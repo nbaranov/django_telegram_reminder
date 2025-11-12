@@ -80,10 +80,16 @@
             </div>
 
             <div class="row mb-3">
-                <div class="col-md-6">
+                <div class="col md-6">
                     <input v-model="filterText" type="text" class="form-control" placeholder="Поиск по тексту...">
                 </div>
-                <div class="col-md-6">
+                <div class="col md-4">
+                    <select v-model="filterGroup" class="form-select">
+                        <option :value="null">Все группы</option>
+                        <option v-for="group in groups" :key="group.id" :value="group.id">[[ group.name ]]</option>
+                    </select>
+                </div>
+                <div class="col md-6">
                     <select v-model="filterCompleted" class="form-select">
                         <option value="all">Все статусы</option>
                         <option value="pending">В ожидании</option>
@@ -109,9 +115,6 @@
                         <td v-if="!editingReminder || editingReminder.id !== reminder.id" :class="{ 'completed': reminder.is_completed, 'pending': !reminder.is_completed }">
                             [[ reminder.text ]]
                         </td>
-                        <td v-else>
-                            <input v-model="editingReminder.text" type="text" class="form-control">
-                        </td>
                         <td v-if="!editingReminder || editingReminder.id !== reminder.id">
                             <span v-for="group in reminder.groups" :key="group.id" class="badge bg-info me-1">[[ group.name ]]</span>
                         </td>
@@ -120,7 +123,9 @@
                                 <option v-for="group in groups" :key="group.id" :value="group.id">[[ group.name ]]</option>
                             </select>
                         </td>
-                        <td v-if="!editingReminder || editingReminder.id !== reminder.id">[[ formatTimeLeft(reminder.due_time) ]]</td>
+                        <td v-if="!editingReminder || editingReminder.id !== reminder.id" :title="formatDate(reminder.due_time)">
+                            [[ formatTimeLeft(reminder.due_time, reminder.id) ]]
+                        </td>
                         <td v-else>
                             <input v-model="editingReminder.due_time" type="datetime-local" class="form-control">
                         </td>
@@ -138,10 +143,6 @@
                                 <button @click="startEditing(reminder)" class="col-5 btn btn-sm btn-primary">Редактировать</button>
                                 <button @click="deleteReminder(reminder)" class="col-3 btn btn-sm btn-danger">Удалить</button> <!-- Передаём объект -->
                             </div>
-                            {% comment %} <div v-else class="d-flex gap-1">
-                                <button @click="saveEditing" class="col-4 btn btn-sm btn-success">Сохранить</button>
-                                <button @click="cancelEditing" class="col-4 btn btn-sm btn-secondary">Отмена</button>
-                            </div> {% endcomment %}
                         </td>
                     </tr>
                     <tr v-if="filteredReminders.length === 0">
@@ -192,8 +193,9 @@
         window.REMINDERS_DATA = {
             remindersApiEndpoint: "{% url 'api_reminders' %}",
             groupsApiEndpoint: "{% url 'api_groups' %}",
-            updateReminderBaseUrl: updateUrlExample.replace('12345/', ''), // Получаем базу /api/reminders/
-            deleteReminderBaseUrl: deleteUrlExample.replace('12345/', ''), // Получаем базу /api/reminders/delete/
+            sendDueRemindersApiEndpoint: "{% url 'api_send_due_reminders' %}",
+            updateReminderBaseUrl: updateUrlExample.replace('12345/', ''),
+            deleteReminderBaseUrl: deleteUrlExample.replace('12345/', ''),
             csrfToken: "{{ csrf_token }}"
         };
     </script>
