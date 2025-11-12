@@ -135,7 +135,7 @@
                         <td v-else>
                             <input type="checkbox" v-model="editingReminder.is_completed">
                         </td>
-                        <td class="row">
+                        <td>
                             <div v-if="!editingReminder || editingReminder.id !== reminder.id" class="d-flex gap-1">
                                 <button @click="toggleCompleted(reminder)" class="col-4 btn btn-sm" :class="reminder.is_completed ? 'btn-warning' : 'btn-success'">
                                     [[ reminder.is_completed ? 'Отменить' : 'Выполнено' ]]

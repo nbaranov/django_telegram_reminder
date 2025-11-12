@@ -1,38 +1,25 @@
-# bot_handler.py
-
-import os
-import django
 import logging
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from decouple import config
 
-# Настройка Django
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'reminder_project.settings')
-django.setup()
-
 # Настройка логирования
 logging.basicConfig(
-    level=logging.INFO,
-    filename=f'{config('LOG_FOLDER')}/Dj_Tg_reminder_bot.log',
-    filemode='a',
-    format='%(asctime)s %(levelname)s %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
 )
 logger = logging.getLogger(__name__)
-
-from decouple import config
 
 TELEGRAM_BOT_TOKEN = config('TELEGRAM_BOT_TOKEN')
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start."""
-    chat_id = update.effective_message.chat_id # Используем .chat_id для ID чата
-    chat_type = update.effective_message.chat.type # Получаем тип чата
+    chat_id = update.effective_message.chat_id
+    chat_type = update.effective_message.chat.type
 
     logger.info(f"Received /start command from chat_id: {chat_id}, chat_type: {chat_type}")
 
     if chat_type == 'private':
-        # Отправляем сообщение только в личку
         await update.message.reply_text(
             f"Привет! Я бот для напоминаний.\n"
             f"Ваш Chat ID: <code>{chat_id}</code>\n"
@@ -40,7 +27,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='HTML'
         )
     else:
-        # Отправляем сообщение в группу/супергруппу/канал
         await update.message.reply_text(
             f"Привет! Я бот для напоминаний.\n"
             f"Мой Chat ID для этого чата: <code>{chat_id}</code>\n"

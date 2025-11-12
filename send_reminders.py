@@ -24,10 +24,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Получаем токен из .env файла
 TELEGRAM_BOT_TOKEN = config('TELEGRAM_BOT_TOKEN')
-bot = Bot(token=TELEGRAM_BOT_TOKEN)
+TELEGRAM_PROXY_URL = config('TELEGRAM_PROXY_URL')  
 
+def create_bot_with_proxy():
+    """Создает бота с прокси для рассылки"""
+    if TELEGRAM_PROXY_URL:
+        logger.info(f"Reminder bot will use proxy from system/env: {TELEGRAM_PROXY_URL}")
+        # Устанавливаем переменные окружения для прокси
+        os.environ['HTTP_PROXY'] = TELEGRAM_PROXY_URL
+        os.environ['HTTPS_PROXY'] = TELEGRAM_PROXY_URL
+        os.environ['http_proxy'] = TELEGRAM_PROXY_URL
+        os.environ['https_proxy'] = TELEGRAM_PROXY_URL
+        
+    logger.info("Reminder bot created")
+    return Bot(token=TELEGRAM_BOT_TOKEN)
+
+# Создаем бота
+bot = create_bot_with_proxy()
+
+# Остальной код без изменений...
 async def send_reminder_to_user(tg_id, message_text):
     try:
         await bot.send_message(chat_id=tg_id, text=message_text)
@@ -41,7 +57,7 @@ async def send_reminders_data_async(reminders_user_data):
     ids_to_update = []
     for reminder_obj, user_ids_list in reminders_user_data:
         logger.info(f"Processing reminder: {reminder_obj.text}")
-        tasks = [send_reminder_to_user(tg_id, f"Вы просили напомнить о: {reminder_obj.text}") for tg_id in user_ids_list]
+        tasks = [send_reminder_to_user(tg_id, f"Вы просили напомнить:\n{reminder_obj.text}") for tg_id in user_ids_list]
         if tasks:
             await asyncio.gather(*tasks)
         ids_to_update.append(reminder_obj.id)
@@ -51,12 +67,7 @@ def send_due_reminders():
     now = datetime.now(tz=ZoneInfo("Europe/Moscow"))
     logger.info(f"Run at: {now}")
 
-    # ✅ Атомарно помечаем напоминания как "в процессе отправки"
     with transaction.atomic():
-        # Выбираем напоминания, которые:
-        # - просрочены
-        # - не завершены
-        # - не помечены как "в процессе отправки"
         due_reminders = list(
             Reminder.objects.select_for_update()
             .filter(
@@ -72,7 +83,6 @@ def send_due_reminders():
 
         Reminder.objects.filter(id__in=[r.id for r in due_reminders]).update(is_sending=True)
 
-    # Теперь обрабатываем отправку вне транзакции
     reminders_user_data = []
     for reminder in due_reminders:
         user_ids = UserInGroup.objects.filter(
@@ -91,12 +101,10 @@ def send_due_reminders():
         )
         logger.info(f"Marked {len(reminder_ids_to_update)} reminders as sent and completed.")
     else:
-        # Если не было напоминаний для отправки, просто сбрасываем is_sending
         Reminder.objects.filter(id__in=[r.id for r in due_reminders]).update(is_sending=False)
         logger.info("No user data to send.")
         
         
 if __name__ == "__main__":
-    logger.info(f"run senc_reminders")
+    logger.info(f"run send_reminders with proxy")
     send_due_reminders()
-    
