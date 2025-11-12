@@ -34,7 +34,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_type == 'private':
         # Отправляем сообщение только в личку
         await update.message.reply_text(
-            f"Привет! Я бот для напоминаний."
+            f"Привет! Я бот для напоминаний.\n"
             f"Ваш Chat ID: <code>{chat_id}</code>\n"
             f"Добавьте его при создании пользователя на сайте.",
             parse_mode='HTML'
@@ -42,7 +42,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         # Отправляем сообщение в группу/супергруппу/канал
         await update.message.reply_text(
-            f"Привет! Я бот для напоминаний."
+            f"Привет! Я бот для напоминаний.\n"
             f"Мой Chat ID для этого чата: <code>{chat_id}</code>\n"
             f"Добавьте его при создании пользователя на сайте.",
             parse_mode='HTML'

@@ -17,7 +17,10 @@ urlpatterns = [
     path('users/create/', views.UserInGroupCreateView.as_view(), name='useringroup_create'),
     path('users/<int:pk>/update/', views.UserInGroupUpdateView.as_view(), name='useringroup_update'),
     path('users/<int:pk>/delete/', views.UserInGroupDeleteView.as_view(), name='useringroup_delete'),
-
+    
+    # Инструкция
+    path('instruction/', views.instruction_view, name='instruction'),
+    
     # API URLs
     path('api/reminders/', views.RemindersAPIView.as_view(), name='api_reminders'),
     path('api/groups/', views.GroupsAPIView.as_view(), name='api_groups'),

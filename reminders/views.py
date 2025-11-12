@@ -32,6 +32,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Инструкция
+def instruction_view(request):
+    return render(request, 'reminders/instruction.html')
 
 # Представления для напоминаний
 class ReminderListView(TemplateView):
