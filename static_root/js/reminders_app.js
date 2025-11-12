@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     //  Импортируем multiselect правильно
     const Multiselect = window['vue-multiselect'].default;
-    const Datepicker = window['DatePicker'].default;
+    // const Datepicker = window['DatePicker'].default;
 
 
 
@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
         delimiters: ['[[', ']]'],
         components: {
             'multiselect': Multiselect,
-            'Datepicker': Datepicker
+            // 'Datepicker': Datepicker
         },
         data() {
             return {

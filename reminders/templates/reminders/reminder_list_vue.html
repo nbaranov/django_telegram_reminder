@@ -183,8 +183,8 @@
 
     </div>
 
-    <script src="{% static 'reminders/js/vue.global.prod.js' %}"></script>
-    <script src="{% static 'reminders/js/vue-multiselect.js' %}"></script>
+    <script src="{% static 'js/vue.global.prod.js' %}"></script>
+    <script src="{% static 'js/vue-multiselect.js' %}"></script>
     <script>
         // Формируем базы из существующих URL, убирая ID
         const updateUrlExample = "{% url 'api_update_reminder' pk=12345 %}";
@@ -199,8 +199,6 @@
             csrfToken: "{{ csrf_token }}"
         };
     </script>
-    <script type="module" src="{% static 'reminders/js/reminders_app.js' %}"></script>
-    <script src="{% static 'reminders/js/vue-datepicker.js' %}"></script>
-    <link href="{% static 'reminders/css/vue-datepicker.css' %}" rel="stylesheet">
+    <script type="module" src="{% static 'js/reminders_app.js' %}"></script>
 
 {% endblock %}
