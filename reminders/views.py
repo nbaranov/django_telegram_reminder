@@ -12,24 +12,22 @@ from django.utils.dateparse import parse_datetime
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.utils import timezone
+from datetime import timedelta
 from django.db import transaction
 
+import asyncio
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 from decouple import config
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from .models import Reminder, Group, UserInGroup
 from .forms import GroupForm, UserInGroupForm
-from send_reminders import send_reminders_data_async
+from send_reminders import create_bot_with_proxy, send_reminders_batch
 
-logging.basicConfig(
-    level=logging.INFO,
-    filename=f'{config('LOG_FOLDER')}/Dj_Tg_reminder.log',
-    filemode='a',
-    format='%(asctime)s %(levelname)s %(message)s'
-)
+# Настройка логирования
 logger = logging.getLogger(__name__)
 
 # Инструкция
@@ -297,16 +295,14 @@ class SendDueRemindersAPIView(View):
         try:
             data = json.loads(request.body.decode('utf-8'))
             reminder_id = data.get('reminder_id')
-
+            logger.info(f"I got and start sending for reminder: {reminder_id}")
+            
             if not reminder_id:
                 return JsonResponse({'error': 'reminder_id is required'}, status=400)
 
             now = timezone.now()
 
-            # Атомарно помечаем как "в процессе отправки", если:
-            # - не завершено
-            # - не в процессе отправки
-            # - время наступило
+            # Атомарно помечаем как "в процессе отправки"
             with transaction.atomic():
                 try:
                     reminder = Reminder.objects.select_for_update().get(id=reminder_id)
@@ -322,8 +318,9 @@ class SendDueRemindersAPIView(View):
                     logger.info(f"Reminder {reminder_id} already being sent.")
                     return JsonResponse({'status': 'already_sending'})
 
-                if reminder.due_time > now:
-                    logger.info(f"Reminder {reminder_id} is not due yet (due: {reminder.due_time}, now: {now}).")
+                cushion = timedelta(seconds=5)
+                if reminder.due_time > now + cushion:
+                    logger.info(f"Reminder {reminder_id} is not due yet (due: {reminder.due_time}, now: {now}), cushion: {cushion}")
                     return JsonResponse({'status': 'not_due_yet'})
 
                 logger.info(f"Marking reminder {reminder_id} as sending.")
@@ -336,35 +333,45 @@ class SendDueRemindersAPIView(View):
             ).values_list('telegram_id', flat=True)
             user_ids_list = list(user_ids)
 
-            if user_ids_list:
-                logger.info(f"Sending reminder {reminder_id} to {len(user_ids_list)} users.")
-                import asyncio
-                # Проверим, что функция принимает правильный формат
-                # send_reminders_data_async ожидает [(reminder_obj, user_ids_list)]
-                asyncio.run(send_reminders_data_async([(reminder, user_ids_list)]))
-            else:
+            if not user_ids_list:
                 logger.info(f"No users found for reminder {reminder_id}, skipping send.")
+                reminder.is_sending = False
+                reminder.save()
+                return JsonResponse({'status': 'no_users'})
 
-            # Помечаем как отправленное
-            reminder.sent_at = now
-            reminder.is_completed = True
-            reminder.is_sending = False
-            reminder.save()
-            logger.info(f"Reminder {reminder_id} marked as sent and completed.")
-
-            return JsonResponse({'status': 'sent'})
+            logger.info(f"Sending reminder {reminder_id} to {len(user_ids_list)} users.")
+            
+            # СОЗДАЕМ БОТА ТОЛЬКО ЗДЕСЬ
+            bot = create_bot_with_proxy()
+            
+            try:
+                # Используем ту же функцию отправки
+                successful_ids = asyncio.run(send_reminders_batch(bot, [(reminder, user_ids_list)]))
+                
+                if reminder.id in successful_ids:
+                    # Помечаем как отправленное
+                    reminder.sent_at = now
+                    reminder.is_completed = True
+                    reminder.is_sending = False
+                    reminder.save()
+                    logger.info(f"Reminder {reminder_id} marked as sent and completed.")
+                    return JsonResponse({'status': 'sent'})
+                else:
+                    # Сбрасываем флаг отправки
+                    reminder.is_sending = False
+                    reminder.save()
+                    logger.error(f"Reminder {reminder_id} failed to send to all users")
+                    return JsonResponse({'error': 'Failed to send to any user'}, status=500)
+                    
+            except Exception as e:
+                logger.error(f"Error sending reminder {reminder_id}: {e}")
+                reminder.is_sending = False
+                reminder.save()
+                return JsonResponse({'error': str(e)}, status=500)
 
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error in SendDueRemindersAPIView: {e}")
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
         except Exception as e:
-            logger.error(f"Error in SendDueRemindersAPIView: {e}", exc_info=True) # exc_info=True добавит traceback
-            if 'reminder' in locals():
-                try:
-                    # Сбрасываем флаг, если он был установлен
-                    reminder.is_sending = False
-                    reminder.save()
-                    logger.info(f"Reset is_sending for reminder {reminder.id} after error.")
-                except Exception as rollback_error:
-                    logger.error(f"Failed to reset is_sending for reminder {reminder.id}: {rollback_error}", exc_info=True)
+            logger.error(f"Error in SendDueRemindersAPIView: {e}", exc_info=True)
             return JsonResponse({'error': str(e)}, status=500)

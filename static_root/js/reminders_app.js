@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 remindersBeingSent: [],
                 reminderTimers: {},
                 loading: true,
+                refreshing: false,
                 error: null,
                 groups: [],
                 filterCompleted: 'all',
@@ -43,6 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     minutes: 0,
                     timeMode: 'relative'
                 },
+                currentTime: new Date(),
                 timerInterval: null,
                 pagination: {
                     current_page: 1,
@@ -97,54 +99,72 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             },
 
-            async loadReminders(page = 1) {
-                // console.log(`[loadReminders] Loading page ${page}`);
-                this.loading = true;
+            async loadReminders(page = 1, isRefresh = false) {
+                // Только при обычной загрузке показываем индикатор
+                if (!isRefresh) {
+                    this.loading = true;
+                }
                 this.error = null;
+            
                 try {
                     const response = await fetch(`${data.remindersApiEndpoint}?page=${page}&page_size=20`);
                     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                     const result = await response.json();
-
+            
                     this.pagination = result.pagination;
-
-                    const newReminders = result.reminders.map(rem => ({
-                        ...rem,
-                        updateUrl: `${data.updateReminderBaseUrl}${rem.id}/`,
-                        deleteUrl: `${data.deleteReminderBaseUrl}${rem.id}/`
-                    }));
-
-                    const updatedReminders = newReminders.map(newRem => {
-                        const oldRem = this.reminders.find(r => r.id === newRem.id);
-                        if (oldRem) {
-                            // Если у старого напоминания был sent_at или api_call_attempted — сохраняем
-                            return {
-                                ...newRem,
-                                sent_at: oldRem.sent_at || newRem.sent_at, // приоритет: если локально был, не перезаписываем
-                                api_call_attempted: oldRem.api_call_attempted || newRem.api_call_attempted,
-                            };
+            
+                    const freshMap = new Map(
+                        result.reminders.map(rem => [
+                            rem.id,
+                            {
+                                ...rem,
+                                updateUrl: `${data.updateReminderBaseUrl}${rem.id}/`,
+                                deleteUrl: `${data.deleteReminderBaseUrl}${rem.id}/`
+                            }
+                        ])
+                    );
+            
+                    const updated = [];
+                    for (const old of this.reminders) {
+                        const fresh = freshMap.get(old.id);
+                        if (fresh) {
+                            Object.assign(old, {
+                                ...old,
+                                ...fresh,
+                                sent_at: old.sent_at || fresh.sent_at,
+                                api_call_attempted: old.api_call_attempted || fresh.api_call_attempted
+                            });
+                            updated.push(old);
+                            freshMap.delete(old.id);
                         }
-                        return newRem;
-                    });
-
-                    // console.log(`[loadReminders] Updated reminders:`, updatedReminders);
-
-                    this.reminders = updatedReminders;
+                    }
+                    for (const fresh of freshMap.values()) {
+                        updated.push(fresh);
+                    }
+                    updated.sort((a, b) => a.id - b.id);
+            
+                    this.reminders.splice(0, this.reminders.length, ...updated);
+            
+                    // Перезапуск таймеров
                     Object.values(this.reminderTimers).forEach(clearInterval);
                     this.reminderTimers = {};
-
                     this.reminders.forEach(reminder => {
                         if (!reminder.is_completed && !reminder.sent_at) {
-                            // console.log(`[loadReminders] Starting timer for reminder ID: ${reminder.id}`);
                             this.startReminderTimer(reminder);
                         }
                     });
-
+            
                 } catch (err) {
                     console.error('Error loading reminders:', err);
-                    this.error = 'Ошибка загрузки напоминаний';
+                    // Показываем ошибку только при основной загрузке
+                    if (!isRefresh) {
+                        this.error = 'Ошибка загрузки напоминаний';
+                    }
+                    // При автообновлении можно не показывать — или записать в лог
                 } finally {
-                    this.loading = false;
+                    if (!isRefresh) {
+                        this.loading = false;
+                    }
                 }
             },
 
@@ -332,29 +352,24 @@ document.addEventListener('DOMContentLoaded', () => {
             },
 
             formatTimeLeft(isoString, reminderId) {
-                const now = new Date();
+                const now = this.currentTime;
                 const due = new Date(isoString);
                 const diffMs = due - now;
-
-                // ✅ Логируем
+        
                 const reminder = this.reminders.find(r => r.id === reminderId);
-                // console.log(`[formatTimeLeft] ID: ${reminderId}, diffMs: ${diffMs}, reminder.sent_at: ${reminder?.sent_at}, reminder.is_completed: ${reminder?.is_completed}`);
-
-                if (reminder && reminder.sent_at) { // ✅ Проверяем sent_at
-                    // console.log(`[formatTimeLeft] Returning 'Отправлено в ...' for ID: ${reminderId}`);
+                if (reminder && reminder.sent_at) {
                     return `${this.formatDate(reminder.sent_at)}`;
                 }
-
+        
                 if (diffMs <= 0) {
-                    // console.log(`[formatTimeLeft] Returning 'Отправляется' for ID: ${reminderId}`);
                     return 'Отправляется';
                 }
-
+        
                 const days = Math.floor(diffMs / 86400000);
                 const hours = Math.floor((diffMs % 86400000) / 3600000);
                 const minutes = Math.floor((diffMs % 3600000) / 60000);
                 const seconds = Math.floor((diffMs % 60000) / 1000);
-
+        
                 if (days > 0) {
                     return `${days}д ${hours}ч ${minutes}м`;
                 } else if (hours > 0) {
@@ -390,6 +405,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             reminder.is_completed = true;
                             reminder.sent_at = new Date().toISOString();
                         }
+                    } else {
+                        console.log("[triggerReminderIfNeeded]", result)
                     }
                 } catch (err) {
                     console.error('Error triggering reminder:', err);
@@ -532,13 +549,12 @@ document.addEventListener('DOMContentLoaded', () => {
             await this.loadReminders();
 
             this.timerInterval = setInterval(() => {
-                this.$forceUpdate();
+                this.currentTime = new Date(); // реактивное изменение
             }, 1000);
 
-            // Таймер обновления списка
             this.refreshInterval = setInterval(async () => {
                 if (!this.isFormActive) {
-                    await this.loadReminders(this.pagination.current_page);
+                    await this.loadReminders(this.pagination.current_page, true); 
                 }
             }, 30000);
         },

@@ -2,6 +2,7 @@ import os
 import django
 import asyncio
 import logging
+from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from telegram import Bot
@@ -15,14 +16,26 @@ django.setup()
 
 from reminders.models import Reminder, UserInGroup
 
-# Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    filename=f'{config('LOG_FOLDER')}/Dj_Tg_reminder.log',
-    filemode='a',
-    format='%(asctime)s %(levelname)s %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Настройка логирования - ВЫНЕСЕМ В ОТДЕЛЬНУЮ ФУНКЦИЮ
+def setup_logging():
+    handler = RotatingFileHandler(
+        filename=f'{config("LOG_FOLDER")}/Dj_Tg_reminder.log',
+        maxBytes=1 * 1024 * 1024,  # 1 МБ в байтах
+        backupCount=1,  
+        encoding='utf-8'
+    )
+
+    formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+    handler.setFormatter(formatter)
+
+    logger = logging.getLogger()
+    for h in logger.handlers[:]:
+        logger.removeHandler(h)
+    logger.setLevel(logging.INFO)
+    logger.addHandler(handler)
+    return logger
+
+logger = setup_logging()
 
 TELEGRAM_BOT_TOKEN = config('TELEGRAM_BOT_TOKEN')
 TELEGRAM_PROXY_URL = config('TELEGRAM_PROXY_URL')  
@@ -30,38 +43,52 @@ TELEGRAM_PROXY_URL = config('TELEGRAM_PROXY_URL')
 def create_bot_with_proxy():
     """Создает бота с прокси для рассылки"""
     if TELEGRAM_PROXY_URL:
-        logger.info(f"Reminder bot will use proxy from system/env: {TELEGRAM_PROXY_URL}")
-        # Устанавливаем переменные окружения для прокси
         os.environ['HTTP_PROXY'] = TELEGRAM_PROXY_URL
         os.environ['HTTPS_PROXY'] = TELEGRAM_PROXY_URL
         os.environ['http_proxy'] = TELEGRAM_PROXY_URL
         os.environ['https_proxy'] = TELEGRAM_PROXY_URL
         
-    logger.info("Reminder bot created")
+    logger.info(f"Reminder bot created {'with proxy' if TELEGRAM_PROXY_URL else ''}")
     return Bot(token=TELEGRAM_BOT_TOKEN)
 
-# Создаем бота
-bot = create_bot_with_proxy()
-
-# Остальной код без изменений...
-async def send_reminder_to_user(tg_id, message_text):
+async def send_reminder_to_user(bot, tg_id, message_text):
+    """Асинхронная функция отправки напоминания пользователю"""
     try:
         await bot.send_message(chat_id=tg_id, text=message_text)
         logger.info(f"Sent reminder to {tg_id}")
+        return True
     except Forbidden:
         logger.warning(f"User {tg_id} blocked the bot. Skipping.")
+        return False
     except Exception as e:
         logger.error(f"Failed to send message to {tg_id}: {e}")
+        return False
 
-async def send_reminders_data_async(reminders_user_data):
-    ids_to_update = []
+async def send_reminders_batch(bot, reminders_user_data):
+    """Асинхронная отправка батча напоминаний"""
+    successful_reminders = []
+    
     for reminder_obj, user_ids_list in reminders_user_data:
         logger.info(f"Processing reminder: {reminder_obj.text}")
-        tasks = [send_reminder_to_user(tg_id, f"Вы просили напомнить:\n{reminder_obj.text}") for tg_id in user_ids_list]
+        
+        # Создаем задачи для всех пользователей
+        tasks = [
+            send_reminder_to_user(bot, tg_id, f"Вы просили напомнить:\n{reminder_obj.text}") 
+            for tg_id in user_ids_list
+        ]
+        
         if tasks:
-            await asyncio.gather(*tasks)
-        ids_to_update.append(reminder_obj.id)
-    return ids_to_update
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Если хотя бы одно сообщение отправлено успешно, считаем напоминание отправленным
+            successful_sends = sum(1 for r in results if r is True)
+            if successful_sends > 0:
+                successful_reminders.append(reminder_obj.id)
+                logger.info(f"Reminder {reminder_obj.id} successfully sent to {successful_sends} users")
+            else:
+                logger.warning(f"Reminder {reminder_obj.id} failed to send to all users")
+    
+    return successful_reminders
 
 def send_due_reminders():
     now = datetime.now(tz=ZoneInfo("Europe/Moscow"))
@@ -81,7 +108,8 @@ def send_due_reminders():
             logger.info("No due reminders to send.")
             return
 
-        Reminder.objects.filter(id__in=[r.id for r in due_reminders]).update(is_sending=True)
+        ids_to_send = [r.id for r in due_reminders]
+        Reminder.objects.filter(id__in=ids_to_send).update(is_sending=True)
 
     reminders_user_data = []
     for reminder in due_reminders:
@@ -89,20 +117,46 @@ def send_due_reminders():
             group__in=reminder.groups.all()
         ).values_list('telegram_id', flat=True)
         user_ids_list = list(user_ids)
-        reminders_user_data.append((reminder, user_ids_list))
+        if user_ids_list:
+            reminders_user_data.append((reminder, user_ids_list))
 
-    if reminders_user_data:
-        reminder_ids_to_update = asyncio.run(send_reminders_data_async(reminders_user_data))
+    if not reminders_user_data:
+        Reminder.objects.filter(id__in=ids_to_send).update(is_sending=False)
+        logger.info("No users found for any of the due reminders. Skipping send.")
+        return
 
-        Reminder.objects.filter(id__in=reminder_ids_to_update).update(
-            sent_at=now,
-            is_completed=True,
-            is_sending=False 
-        )
-        logger.info(f"Marked {len(reminder_ids_to_update)} reminders as sent and completed.")
-    else:
-        Reminder.objects.filter(id__in=[r.id for r in due_reminders]).update(is_sending=False)
-        logger.info("No user data to send.")
+    # СОЗДАЕМ БОТА ТОЛЬКО ЗДЕСЬ - когда точно будем отправлять
+    bot = create_bot_with_proxy()
+
+    # Запускаем асинхронную рассылку
+    try:
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        successful_ids = loop.run_until_complete(send_reminders_batch(bot, reminders_user_data))
+        
+        # Только успешные помечаем как завершённые
+        if successful_ids:
+            Reminder.objects.filter(id__in=successful_ids).update(
+                sent_at=now,
+                is_completed=True,
+                is_sending=False
+            )
+            logger.info(f"Marked {len(successful_ids)} reminders as sent and completed.")
+        
+        # Сбрасываем флаг у тех, что не удалось отправить
+        failed_ids = list(set(ids_to_send) - set(successful_ids))
+        if failed_ids:
+            Reminder.objects.filter(id__in=failed_ids).update(is_sending=False)
+            logger.warning(f"Reset is_sending flag for {len(failed_ids)} failed reminders")
+            
+    except Exception as e:
+        logger.error(f"Critical error during sending: {e}", exc_info=True)
+        # Критическая ошибка - сбрасываем is_sending у всех
+        Reminder.objects.filter(id__in=ids_to_send).update(is_sending=False)
         
         
 if __name__ == "__main__":
