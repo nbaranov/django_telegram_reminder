@@ -6,6 +6,24 @@
         .completed { text-decoration: line-through; color: #6c757d; }
         .pending { }
         .status-badge { font-size: 0.8em; }
+        
+        /* Стили для ссылок-тикетов */
+        .ticket-link {
+            color: #198754;
+            text-decoration: underline;
+            font-weight: bold;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        .ticket-link:hover {
+            color: #157347;
+        }
+        
+        /* Для завершенных напоминаний делаем ссылки менее заметными */
+        .completed .ticket-link {
+            color: #6c757d;
+            background-color: transparent;
+        }
     </style>
 {% endblock %}
 
@@ -32,16 +50,19 @@
                 </div>
                 <div class="card-body">
                     <form @submit.prevent="submitForm">
-
                         <!-- Текст -->
                         <div class="mb-3">
-                            <label class="form-label">Текст напоминания</label>
+                            <label class="form-label">
+                                Текст напоминания <span class="text-danger">*</span>
+                            </label>
                             <input v-model="editingForm.text" type="text" class="form-control" placeholder="Что нужно напомнить?" required>
                         </div>
 
                         <!-- Группы -->
                         <div class="mb-3">
-                            <label class="form-label">Группы получателей</label>
+                            <label class="form-label">
+                                Группы получателей <span class="text-danger">*</span>
+                            </label>
                             <multiselect
                                 v-model="editingForm.selectedGroups"
                                 :options="groups"
@@ -51,8 +72,13 @@
                                 placeholder="Выберите группы..."
                                 label="name"
                                 track-by="id"
+                                :class="{ 'is-invalid': editingForm.selectedGroups.length === 0 && formSubmitted }"
+                                required
                             >
                             </multiselect>
+                            <div v-if="editingForm.selectedGroups.length === 0 && formSubmitted" class="invalid-feedback">
+                                Выберите хотя бы одну группу
+                            </div>
                         </div>
 
                         <!-- Режим "через" -->
@@ -115,8 +141,9 @@
                 <tbody>
                     <tr v-for="reminder in filteredReminders" :key="reminder.id">
                         <td>[[ reminder.id ]]</td>
-                        <td v-if="!editingReminder || editingReminder.id !== reminder.id" :class="{ 'completed': reminder.is_completed, 'pending': !reminder.is_completed }">
-                            [[ reminder.text ]]
+                        <td v-if="!editingReminder || editingReminder.id !== reminder.id" 
+                            :class="{ 'completed': reminder.is_completed, 'pending': !reminder.is_completed }"
+                            v-html="formatTextWithLinks(reminder.text)">
                         </td>
                         <td v-if="!editingReminder || editingReminder.id !== reminder.id">
                             <span v-for="group in reminder.groups" :key="group.id" class="badge bg-info me-1">[[ group.name ]]</span>

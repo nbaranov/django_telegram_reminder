@@ -159,8 +159,7 @@ class RemindersAPIView(View):
         if page_size > 100:  # Ограничим максимальный размер страницы
             page_size = 100
 
-        # Запрашиваем все напоминания, сортируем по ID (новые — первыми)
-        reminders = Reminder.objects.all().order_by("-sent_at", "due_time").prefetch_related('groups')
+        reminders = Reminder.objects.all().prefetch_related('groups')
 
         # Создаём пагинатор
         paginator = Paginator(reminders, page_size)
@@ -210,6 +209,8 @@ class ReminderUpdateView(View):
             data = json.loads(request.body)
             if 'is_completed' in data:
                 reminder.is_completed = data['is_completed']
+                reminder.sent_at = timezone.now()
+                logger.info(f"Reminder with ID {pk} was chnged is_completed to: {reminder.is_completed}")
                 reminder.save()
                 return JsonResponse({'success': True, 'reminder': {
                     'id': reminder.id,
