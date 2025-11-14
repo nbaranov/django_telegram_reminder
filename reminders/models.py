@@ -16,12 +16,29 @@ class UserInGroup(models.Model):
 
 class Reminder(models.Model):
     text = models.TextField()
-    groups = models.ManyToManyField(Group, related_name='reminders')
+    groups = models.ManyToManyField('Group')
     due_time = models.DateTimeField()
     is_completed = models.BooleanField(default=False)
     is_sending = models.BooleanField(default=False)
     sent_at = models.DateTimeField(null=True, blank=True)
-
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+    
+    # Добавляем поля для периодической отправки
+    repeat_interval_minutes = models.IntegerField(
+        default=0,
+        help_text="Интервал повторения в минутах (0 - без повторения)"
+    )
+    repeat_count = models.IntegerField(
+        default=0,
+        help_text="Счетчик отправок"
+    )
+    max_repeats = models.IntegerField(
+        default=1,
+        help_text="Максимальное количество отправок"
+    )
+    
     def __str__(self):
-        status = "Completed" if self.is_completed else "Pending"
-        return f"[{status}] {self.text} (Due: {self.due_time})"
+        return f"Reminder {self.id}: {self.text[:50]}"
+    
+    class Meta:
+        ordering = ['-created_at']

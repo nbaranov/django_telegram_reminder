@@ -34,9 +34,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     text: '',
                     selectedGroups: [],
                     days: 0,
-                    hours: 2,
-                    minutes: 0,
-                    timeMode: 'relative'
+                    hours: 0,
+                    minutes: 5,
+                    timeMode: 'relative',
+                    absoluteTime: this.getCurrentDateTime(),
+                    repeatInterval: 0,
+                    maxRepeats: 1
                 },
                 formSubmitted: false,
                 currentTime: new Date(),
@@ -51,15 +54,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
                 storageKeys: {
                     filterGroup: 'reminders_filterGroup',
-                    lastGroups: 'reminders_lastGroups'
+                    filterCompleted: 'reminders_filterCompleted',
+                    lastGroups: 'reminders_lastGroups',
+                    formSettings: 'reminders_formSettings'
                 },
-                // Добавляем флаг для отслеживания первоначальной загрузки
                 initialLoadComplete: false
             };
         },
         computed: {
             filteredReminders() {
-                // Если первоначальная загрузка не завершена, возвращаем пустой массив
                 if (!this.initialLoadComplete) {
                     return [];
                 }
@@ -83,6 +86,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 return this.sortReminders(filtered);
             },
+            repeatIntervalOptions() {
+                return [
+                    { value: 0, label: 'Без повторения' },
+                    { value: 1, label: 'Каждую минуту' },
+                    { value: 5, label: 'Каждые 5 минут' },
+                    { value: 10, label: 'Каждые 10 минут' },
+                    { value: 15, label: 'Каждые 15 минут' },
+                    { value: 30, label: 'Каждые 30 минут' },
+                    { value: 60, label: 'Каждый час' },
+                    { value: 120, label: 'Каждые 2 часа' },
+                    { value: 1440, label: 'Каждый день' },
+                    { value: 10080, label: 'Раз в неделю' }
+                ];
+            },
             statusLabels() {
                 return {
                     pending: 'В ожидании',
@@ -96,9 +113,16 @@ document.addEventListener('DOMContentLoaded', () => {
         watch: {
             filterGroup(newVal) {
                 this.saveToStorage();
-                // При изменении фильтра перезагружаем данные с сервера
                 if (this.initialLoadComplete) {
                     this.loadReminders(this.pagination.current_page);
+                }
+            },
+            filterCompleted(newVal) {
+                this.saveToStorage();
+            },
+            'editingForm.repeatInterval'(newVal) {
+                if (newVal === 0) {
+                    this.editingForm.maxRepeats = 1;
                 }
             }
         },
@@ -114,13 +138,40 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             },
 
+            getCurrentDateTime() {
+                const now = new Date();
+                const timezoneOffset = now.getTimezoneOffset() * 60000;
+                const localDate = new Date(now.getTime() - timezoneOffset);
+                return localDate.toISOString().slice(0, 16);
+            },
+
+            switchTimeMode(mode) {
+                this.editingForm.timeMode = mode;
+                if (mode === 'absolute') {
+                    this.editingForm.absoluteTime = this.getCurrentDateTime();
+                }
+            },
+
+            utcToLocal(utcString) {
+                if (!utcString) return this.getCurrentDateTime();
+                
+                const date = new Date(utcString);
+                const timezoneOffset = date.getTimezoneOffset() * 60000;
+                const localDate = new Date(date.getTime() - timezoneOffset);
+                return localDate.toISOString().slice(0, 16);
+            },
+
             loadFromStorage() {
                 // Загружаем фильтр группы
                 const savedFilterGroup = localStorage.getItem(this.storageKeys.filterGroup);
                 if (savedFilterGroup) {
-                    // Преобразуем в число, так как в select используется числовое значение
                     this.filterGroup = parseInt(savedFilterGroup);
-                    console.log('Loaded filterGroup from storage:', this.filterGroup);
+                }
+                
+                // Загружаем фильтр статуса
+                const savedFilterCompleted = localStorage.getItem(this.storageKeys.filterCompleted);
+                if (savedFilterCompleted) {
+                    this.filterCompleted = savedFilterCompleted;
                 }
                 
                 // Загружаем последние выбранные группы
@@ -135,6 +186,23 @@ document.addEventListener('DOMContentLoaded', () => {
                         console.warn('Failed to parse last groups from storage:', e);
                     }
                 }
+
+                // Загружаем настройки формы
+                const savedFormSettings = localStorage.getItem(this.storageKeys.formSettings);
+                if (savedFormSettings) {
+                    try {
+                        const formSettings = JSON.parse(savedFormSettings);
+                        // Обновляем только те поля, которые не являются уникальными для каждого напоминания
+                        this.editingForm.days = formSettings.days || 0;
+                        this.editingForm.hours = formSettings.hours || 0;
+                        this.editingForm.minutes = formSettings.minutes || 5;
+                        this.editingForm.timeMode = formSettings.timeMode || 'relative';
+                        this.editingForm.repeatInterval = formSettings.repeatInterval || 0;
+                        this.editingForm.maxRepeats = formSettings.maxRepeats || 1;
+                    } catch (e) {
+                        console.warn('Failed to parse form settings from storage:', e);
+                    }
+                }
             },
 
             saveToStorage() {
@@ -145,11 +213,29 @@ document.addEventListener('DOMContentLoaded', () => {
                     localStorage.removeItem(this.storageKeys.filterGroup);
                 }
                 
+                // Сохраняем фильтр статуса
+                if (this.filterCompleted) {
+                    localStorage.setItem(this.storageKeys.filterCompleted, this.filterCompleted);
+                } else {
+                    localStorage.removeItem(this.storageKeys.filterCompleted);
+                }
+                
                 // Сохраняем последние выбранные группы
                 if (this.editingForm.selectedGroups.length > 0) {
                     const groupIds = this.editingForm.selectedGroups.map(group => group.id);
                     localStorage.setItem(this.storageKeys.lastGroups, JSON.stringify(groupIds));
                 }
+
+                // Сохраняем настройки формы (кроме текста и absoluteTime)
+                const formSettings = {
+                    days: this.editingForm.days,
+                    hours: this.editingForm.hours,
+                    minutes: this.editingForm.minutes,
+                    timeMode: this.editingForm.timeMode,
+                    repeatInterval: this.editingForm.repeatInterval,
+                    maxRepeats: this.editingForm.maxRepeats
+                };
+                localStorage.setItem(this.storageKeys.formSettings, JSON.stringify(formSettings));
             },
 
             sortReminders(reminders) {
@@ -186,12 +272,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     return `<a href="https://ttms/ttms/ticket?id=${match}" target="_blank" class="ticket-link">${match}</a>`;
                 });
             },
-            
-            safeHtml(html) {
-                const div = document.createElement('div');
-                div.innerHTML = html;
-                return div.innerHTML;
-            },
 
             async loadReminders(page = 1, isRefresh = false) {
                 if (!isRefresh) {
@@ -200,10 +280,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 this.error = null;
             
                 try {
-                    // Добавляем параметр фильтрации по группе в запрос к серверу
-                    let url = `${data.remindersApiEndpoint}?page=${page}&page_size=20`;
-                    
-                    const response = await fetch(url);
+                    const response = await fetch(`${data.remindersApiEndpoint}?page=${page}&page_size=20`);
                     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                     const result = await response.json();
             
@@ -228,7 +305,6 @@ document.addEventListener('DOMContentLoaded', () => {
                                 ...old,
                                 ...fresh,
                                 sent_at: old.sent_at || fresh.sent_at,
-                                api_call_attempted: old.api_call_attempted || fresh.api_call_attempted
                             });
                             updated.push(old);
                             freshMap.delete(old.id);
@@ -241,10 +317,11 @@ document.addEventListener('DOMContentLoaded', () => {
             
                     this.reminders.splice(0, this.reminders.length, ...updated);
             
+                    // Перезапуск таймеров
                     Object.values(this.reminderTimers).forEach(clearInterval);
                     this.reminderTimers = {};
                     this.reminders.forEach(reminder => {
-                        if (!reminder.is_completed && !reminder.sent_at) {
+                        if (!reminder.is_completed) {
                             this.startReminderTimer(reminder);
                         }
                     });
@@ -258,7 +335,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (!isRefresh) {
                         this.loading = false;
                     }
-                    // Отмечаем, что первоначальная загрузка завершена
                     if (!this.initialLoadComplete) {
                         this.initialLoadComplete = true;
                     }
@@ -276,21 +352,47 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             },
 
+            formatRepeatInterval(minutes) {
+                const intervals = {
+                    1: '1 мин',
+                    5: '5 мин',
+                    10: '10 мин',
+                    15: '15 мин',
+                    30: '30 мин',
+                    60: '1 час',
+                    120: '2 часа',
+                    1440: '1 день',
+                    10080: '1 нед.'
+                };
+                
+                if (intervals[minutes]) {
+                    return intervals[minutes];
+                }
+            },
+
             startReminderTimer(reminder) {
+                // Очищаем существующий таймер
+                if (this.reminderTimers[reminder.id]) {
+                    clearInterval(this.reminderTimers[reminder.id]);
+                }
+            
                 const timerId = setInterval(() => {
                     const now = new Date();
                     const due = new Date(reminder.due_time);
                     const diffMs = due - now;
-
-                    if (diffMs <= 0) {
-                        if (!this.remindersBeingSent.includes(reminder.id)) {
-                            this.triggerReminderIfNeeded(reminder.id);
-                        }
+            
+                    // Если время пришло и напоминание не в процессе отправки и не завершено
+                    if (diffMs <= 0 && !this.remindersBeingSent.includes(reminder.id) && !reminder.is_completed) {
+                        this.triggerReminderIfNeeded(reminder.id);
+                    }
+                    
+                    // Если напоминание завершено, останавливаем таймер
+                    if (reminder.is_completed) {
                         clearInterval(this.reminderTimers[reminder.id]);
                         delete this.reminderTimers[reminder.id];
                     }
                 }, 1000);
-
+            
                 this.reminderTimers[reminder.id] = timerId;
             },
 
@@ -326,13 +428,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     isActive: true,
                     mode: 'create',
                     id: null,
-                    text: '',
+                    text: '', // Текст всегда очищаем
                     selectedGroups: [...this.editingForm.selectedGroups],
-                    days: 0,
-                    hours: 2,
-                    minutes: 0,
-                    dueTime: '',
-                    timeMode: 'relative'
+                    days: this.editingForm.days,
+                    hours: this.editingForm.hours,
+                    minutes: this.editingForm.minutes,
+                    timeMode: this.editingForm.timeMode,
+                    absoluteTime: this.getCurrentDateTime(),
+                    repeatInterval: this.editingForm.repeatInterval,
+                    maxRepeats: this.editingForm.maxRepeats
                 };
             },
 
@@ -340,9 +444,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const now = new Date();
                 const due = new Date(reminder.due_time);
                 const diffMs = due - now;
+                
                 let timeMode = 'absolute';
                 let days = 0, hours = 0, minutes = 0;
-                let dueTimeLocal = '';
+                let absoluteTime = '';
 
                 if (diffMs > 0 && diffMs <= 30 * 24 * 3600000) {
                     days = Math.floor(diffMs / 86400000);
@@ -350,7 +455,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     minutes = Math.floor((diffMs % 3600000) / 60000);
                     timeMode = 'relative';
                 } else {
-                    dueTimeLocal = reminder.due_time.slice(0, 16);
+                    absoluteTime = this.utcToLocal(reminder.due_time);
                     timeMode = 'absolute';
                 }
 
@@ -363,14 +468,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     days,
                     hours,
                     minutes,
-                    dueTime: dueTimeLocal,
-                    timeMode
+                    absoluteTime,
+                    timeMode,
+                    repeatInterval: reminder.repeat_interval_minutes || 0,
+                    maxRepeats: reminder.max_repeats || 1
                 };
             },
 
             async submitForm() {
                 this.formSubmitted = true;
-                this.isFormActive = false;
                 
                 if (!this.editingForm.text.trim()) {
                     this.error = 'Текст обязателен';
@@ -381,19 +487,35 @@ document.addEventListener('DOMContentLoaded', () => {
                     this.error = 'Выберите хотя бы одну группу';
                     return;
                 }
+
+                let dueTime;
+                
+                if (this.editingForm.timeMode === 'relative') {
+                    const totalMs = (
+                        this.editingForm.days * 86400000 +
+                        this.editingForm.hours * 3600000 +
+                        this.editingForm.minutes * 60000
+                    );
         
-                const totalMs = (
-                    this.editingForm.days * 86400000 +
-                    this.editingForm.hours * 3600000 +
-                    this.editingForm.minutes * 60000
-                );
+                    if (totalMs <= 0) {
+                        this.error = 'Укажите положительное время';
+                        return;
+                    }
         
-                if (totalMs <= 0) {
-                    this.error = 'Укажите положительное время';
-                    return;
+                    dueTime = new Date(Date.now() + totalMs).toISOString();
+                } else {
+                    if (!this.editingForm.absoluteTime) {
+                        this.error = 'Укажите дату и время';
+                        return;
+                    }
+                    
+                    // Преобразуем локальное время в UTC для отправки на сервер
+                    const selectedTime = new Date(this.editingForm.absoluteTime + ':00');
+                    // Учитываем смещение временной зоны
+                    const timezoneOffset = selectedTime.getTimezoneOffset() * 60000;
+                    const utcDate = new Date(selectedTime.getTime() + timezoneOffset);
+                    dueTime = utcDate.toISOString();
                 }
-        
-                const dueTime = new Date(Date.now() + totalMs).toISOString();
         
                 const payload = {
                     text: this.editingForm.text,
@@ -401,6 +523,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     due_time: dueTime,
                     is_completed: false,
                     sent_at: null,
+                    repeat_interval_minutes: this.editingForm.repeatInterval,
+                    max_repeats: this.editingForm.maxRepeats
                 };
         
                 try {
@@ -423,12 +547,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         body: JSON.stringify(payload)
                     });
         
-                    if (!response.ok) throw new Error();
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(errorText);
+                    }
         
                     const result = await response.json();
                     result.updateUrl = `${data.updateReminderBaseUrl}${result.id}/`;
                     result.deleteUrl = `${data.deleteReminderBaseUrl}${result.id}/`;
-        
+
+                    // Сохраняем настройки формы после успешной отправки
                     this.saveToStorage();
         
                     if (this.editingForm.mode === 'create') {
@@ -443,9 +571,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     this.cancelForm(); 
                     this.formSubmitted = false;
                 } catch (err) {
+                    console.error('Form submission error:', err);
                     this.error = this.editingForm.mode === 'create'
-                        ? 'Ошибка создания напоминания'
-                        : 'Ошибка обновления напоминания';
+                        ? 'Ошибка создания напоминания: ' + err.message
+                        : 'Ошибка обновления напоминания: ' + err.message;
+                    this.isFormActive = true;
                 }
             },
 
@@ -453,21 +583,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 const now = this.currentTime;
                 const due = new Date(isoString);
                 const diffMs = due - now;
-        
+            
                 const reminder = this.reminders.find(r => r.id === reminderId);
-                if (reminder && reminder.sent_at) {
+                
+                if (reminder && reminder.is_completed) {
                     return `${this.formatDate(reminder.sent_at)}`;
                 }
-        
+                
                 if (diffMs <= 0) {
-                    return 'Отправляется';
+                    return 'Сейчас';
                 }
-        
+
+                return this.formatTimeDiff(diffMs);
+            },
+            
+            formatTimeDiff(diffMs) {
+                if (diffMs <= 0) {
+                    return '0с';
+                }
+            
                 const days = Math.floor(diffMs / 86400000);
                 const hours = Math.floor((diffMs % 86400000) / 3600000);
                 const minutes = Math.floor((diffMs % 3600000) / 60000);
                 const seconds = Math.floor((diffMs % 60000) / 1000);
-        
+            
                 if (days > 0) {
                     return `${days}д ${hours}ч ${minutes}м`;
                 } else if (hours > 0) {
@@ -483,9 +622,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (this.remindersBeingSent.includes(reminderId)) {
                     return;
                 }
-
+            
                 this.remindersBeingSent.push(reminderId);
-
+            
                 try {
                     const response = await fetch(`${data.sendDueRemindersApiEndpoint}`, {
                         method: 'POST',
@@ -495,19 +634,58 @@ document.addEventListener('DOMContentLoaded', () => {
                         },
                         body: JSON.stringify({ reminder_id: reminderId })
                     });
-
+            
                     const result = await response.json();
+                    
                     if (result.status === 'sent') {
                         const reminder = this.reminders.find(r => r.id === reminderId);
                         if (reminder) {
                             reminder.is_completed = true;
                             reminder.sent_at = new Date().toISOString();
+                            // Останавливаем таймер для завершенного напоминания
+                            if (this.reminderTimers[reminderId]) {
+                                clearInterval(this.reminderTimers[reminderId]);
+                                delete this.reminderTimers[reminderId];
+                            }
+                        }
+                    } else if (result.status === 'repeated' && result.reminder) {
+                        // Обновляем данные напоминания для повторения
+                        const reminder = this.reminders.find(r => r.id === reminderId);
+                        if (reminder) {
+                            Object.assign(reminder, result.reminder);
+                            // Перезапускаем таймер для нового времени
+                            this.startReminderTimer(reminder);
+                        }
+                    } else if (result.status === 'already_completed') {
+                        // Напоминание уже завершено - обновляем локальное состояние
+                        const reminder = this.reminders.find(r => r.id === reminderId);
+                        if (reminder) {
+                            reminder.is_completed = true;
+                            if (this.reminderTimers[reminderId]) {
+                                clearInterval(this.reminderTimers[reminderId]);
+                                delete this.reminderTimers[reminderId];
+                            }
+                        }
+                    } else if (result.status === 'already_sending') {
+                        // Уже отправляется - ждем следующей попытки
+                        console.log(`Reminder ${reminderId} is already being sent`);
+                    } else if (result.status === 'not_due_yet') {
+                        // Еще не время - перезапускаем таймер
+                        const reminder = this.reminders.find(r => r.id === reminderId);
+                        if (reminder) {
+                            this.startReminderTimer(reminder);
                         }
                     } else {
-                        console.log("[triggerReminderIfNeeded]", result)
+                        console.log("[triggerReminderIfNeeded] Unknown status:", result);
                     }
                 } catch (err) {
                     console.error('Error triggering reminder:', err);
+                    // При ошибке сети тоже сбрасываем флаг, чтобы можно было повторить
+                    const reminder = this.reminders.find(r => r.id === reminderId);
+                    if (reminder) {
+                        this.startReminderTimer(reminder);
+                    }
+                } finally {
                     const index = this.remindersBeingSent.indexOf(reminderId);
                     if (index !== -1) {
                         this.remindersBeingSent.splice(index, 1);
@@ -520,16 +698,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 this.formSubmitted = false;
                 this.isFormActive = false;
                 this.editingForm.isActive = false;
+                
+                // Сохраняем текущие настройки формы (кроме текста и ID)
                 Object.assign(this.editingForm, {
                     mode: 'create',
                     id: null,
-                    text: '',
-                    days: 0,
-                    hours: 0,
-                    minutes: 0,
-                    dueTime: '',
-                    timeMode: 'relative'
+                    text: '', 
+                    absoluteTime: this.getCurrentDateTime(), 
                 });
+                this.saveToStorage();
             },
 
             async deleteReminder(reminder) {
@@ -608,9 +785,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         async mounted() {
             await this.loadGroups();
-            // Загружаем настройки из localStorage
             this.loadFromStorage();
-            // Загружаем напоминания с учетом фильтра
             await this.loadReminders();
 
             this.timerInterval = setInterval(() => {

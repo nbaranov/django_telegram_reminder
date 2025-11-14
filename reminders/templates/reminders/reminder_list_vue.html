@@ -40,7 +40,7 @@
                 Добавить напоминание
             </button>
 
-            <!-- Форма создания/редактирования -->
+             <!-- Форма создания/редактирования -->
             <div v-if="editingForm.isActive" class="card mb-4">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0">
@@ -81,19 +81,69 @@
                             </div>
                         </div>
 
-                        <!-- Режим "через" -->
-                        <div class="row g-2 mb-3">
+                        <!-- Режим времени -->
+                        <div class="mb-3">
+                            <label class="form-label">Режим установки времени</label>
+                            <div class="btn-group w-100" role="group">
+                                <button type="button" 
+                                        class="btn" 
+                                        :class="editingForm.timeMode === 'relative' ? 'btn-primary' : 'btn-outline-primary'"
+                                        @click="switchTimeMode('relative')">
+                                    Напомнить через
+                                </button>
+                                <button type="button" 
+                                        class="btn" 
+                                        :class="editingForm.timeMode === 'absolute' ? 'btn-primary' : 'btn-outline-primary'"
+                                        @click="switchTimeMode('absolute')">
+                                    Напомнить в
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Относительное время -->
+                        <div v-if="editingForm.timeMode === 'relative'" class="row g-2 mb-3">
                             <div class="col-4">
                                 <label>Дни</label>
                                 <input v-model.number="editingForm.days" type="number" class="form-control" min="0" placeholder="Дни">
                             </div>
                             <div class="col-4">
                                 <label>Часы</label>
-                                <input v-model.number="editingForm.hours" type="number" class="form-control" min="0" max="23" placeholder="Часы">
+                                <input v-model.number="editingForm.hours" type="number" class="form-control" min="0" placeholder="Часы">
                             </div>
                             <div class="col-4">
                                 <label>Минуты</label>
-                                <input v-model.number="editingForm.minutes" type="number" class="form-control" min="0" max="59" placeholder="Минуты">
+                                <input v-model.number="editingForm.minutes" type="number" class="form-control" min="0" placeholder="Минуты">
+                            </div>
+                        </div>
+
+                        <!-- Абсолютное время -->
+                        <div v-if="editingForm.timeMode === 'absolute'" class="mb-3">
+                            <label class="form-label">Дата и время</label>
+                            <input v-model="editingForm.absoluteTime" type="datetime-local" class="form-control">
+                            <small class="form-text text-muted">Можно выбрать любое время</small>
+                        </div>
+
+                        <!-- Повторение -->
+                        <div class="mb-3">
+                            <label class="form-label">Повторение напоминания</label>
+                            <div class="row g-2">
+                                <div class="col-md-6">
+                                    <label>Интервал повторения</label>
+                                    <select v-model="editingForm.repeatInterval" class="form-select">
+                                        <option v-for="option in repeatIntervalOptions" 
+                                                :key="option.value" 
+                                                :value="option.value">
+                                            [[ option.label ]]
+                                        </option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label>Количество повторов</label>
+                                    <input v-model.number="editingForm.maxRepeats" type="number" class="form-control" min="1" max="50" :disabled="editingForm.repeatInterval === 0">
+                                    <small class="form-text text-muted" v-if="editingForm.repeatInterval > 0">
+                                        Всего отправок: [[ editingForm.maxRepeats ]]
+                                    </small>
+                                </div>
                             </div>
                         </div>
 
@@ -134,6 +184,7 @@
                         <th>Текст</th>
                         <th>Группы</th>
                         <th>До напоминания</th>
+                        <th>Повторение</th>
                         <th>Статус</th>
                         <th>Действия</th>
                     </tr>
@@ -148,22 +199,19 @@
                         <td v-if="!editingReminder || editingReminder.id !== reminder.id">
                             <span v-for="group in reminder.groups" :key="group.id" class="badge bg-info me-1">[[ group.name ]]</span>
                         </td>
-                        <td v-else>
-                            <select v-model="editingGroups" multiple class="form-select">
-                                <option v-for="group in groups" :key="group.id" :value="group.id">[[ group.name ]]</option>
-                            </select>
-                        </td>
                         <td v-if="!editingReminder || editingReminder.id !== reminder.id" :title="formatDate(reminder.due_time)">
                             [[ formatTimeLeft(reminder.due_time, reminder.id) ]]
                         </td>
-                        <td v-else>
-                            <input v-model="editingReminder.due_time" type="datetime-local" class="form-control">
+                        <td v-if="!editingReminder || editingReminder.id !== reminder.id">
+                            <span v-if="reminder.repeat_interval_minutes > 0" class="badge bg-warning">
+                                [[ formatRepeatInterval(reminder.repeat_interval_minutes) ]] × [[ reminder.repeat_count ]]/[[ reminder.max_repeats ]]
+                            </span>
+                            <span v-else class="text-muted">—</span>
                         </td>
                         <td v-if="!editingReminder || editingReminder.id !== reminder.id">
-                            <span :class="['badge', 'status-badge', statusBadgeClass(reminder.is_completed)]">[[ reminder.is_completed ? statusLabels.completed : statusLabels.pending ]]</span>
-                        </td>
-                        <td v-else>
-                            <input type="checkbox" v-model="editingReminder.is_completed">
+                            <span :class="['badge', 'status-badge', statusBadgeClass(reminder.is_completed)]">
+                                [[ reminder.is_completed ? statusLabels.completed : statusLabels.pending ]]
+                            </span>
                         </td>
                         <td>
                             <div v-if="!editingReminder || editingReminder.id !== reminder.id" class="d-flex gap-1">
@@ -171,12 +219,12 @@
                                     [[ reminder.is_completed ? 'Отменить' : 'Выполнено' ]]
                                 </button>
                                 <button @click="startEditing(reminder)" class="col-5 btn btn-sm btn-primary">Редактировать</button>
-                                <button @click="deleteReminder(reminder)" class="col-3 btn btn-sm btn-danger">Удалить</button> <!-- Передаём объект -->
+                                <button @click="deleteReminder(reminder)" class="col-3 btn btn-sm btn-danger">Удалить</button>
                             </div>
                         </td>
                     </tr>
                     <tr v-if="!loading && filteredReminders.length === 0">
-                        <td colspan="6">Напоминаний не найдено.</td>
+                        <td colspan="7">Напоминаний не найдено.</td>
                     </tr>
                 </tbody>
             </table>

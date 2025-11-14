@@ -93,19 +93,16 @@ def home(request):
 # API Views
 @method_decorator(csrf_exempt, name='dispatch')
 class RemindersAPIView(View):
- # POST для создания нового напоминания
     def post(self, request):
         try:
             data = json.loads(request.body)
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
-        # Валидация текста
         text = data.get('text', '').strip()
         if not text:
             return JsonResponse({'error': 'Text is required'}, status=400)
 
-        # Валидация due_time
         due_time_str = data.get('due_time')
         if not due_time_str:
             return JsonResponse({'error': 'Due time is required'}, status=400)
@@ -114,7 +111,6 @@ class RemindersAPIView(View):
         if not due_time:
             return JsonResponse({'error': 'Invalid due_time format'}, status=400)
 
-        # Валидация groups
         group_ids = [g['id'] for g in data.get('groups', [])]
         try:
             group_ids = [int(id) for id in group_ids]
@@ -125,15 +121,17 @@ class RemindersAPIView(View):
         if len(groups) != len(group_ids):
             return JsonResponse({'error': 'Some group IDs do not exist'}, status=400)
 
-        # Создание напоминания
+        # Создание напоминания с новыми полями
+        logger.info(f"{data=}")
         reminder = Reminder.objects.create(
             text=text,
             due_time=due_time,
-            is_completed=data.get('is_completed', False)
+            is_completed=data.get('is_completed', False),
+            repeat_interval_minutes=data.get('repeat_interval_minutes', 0),
+            max_repeats=data.get('max_repeats', 1)
         )
         reminder.groups.set(groups)
 
-        # Возвращаем созданный объект
         created_data = {
             'id': reminder.id,
             'text': reminder.text,
@@ -142,11 +140,13 @@ class RemindersAPIView(View):
             'is_completed': reminder.is_completed,
             'is_sending': reminder.is_sending,
             'sent_at': reminder.sent_at,
+            'repeat_interval_minutes': reminder.repeat_interval_minutes,
+            'repeat_count': reminder.repeat_count,
+            'max_repeats': reminder.max_repeats,
         }
         return JsonResponse(created_data, status=201)
 
     def get(self, request):
-        # Получаем параметры из GET-запроса
         page = request.GET.get('page', 1)
         page_size = request.GET.get('page_size', 20)
 
@@ -156,12 +156,11 @@ class RemindersAPIView(View):
         except (ValueError, TypeError):
             return JsonResponse({'error': 'Invalid page or page_size'}, status=400)
 
-        if page_size > 100:  # Ограничим максимальный размер страницы
+        if page_size > 100:
             page_size = 100
 
         reminders = Reminder.objects.all().prefetch_related('groups')
 
-        # Создаём пагинатор
         paginator = Paginator(reminders, page_size)
 
         try:
@@ -169,7 +168,6 @@ class RemindersAPIView(View):
         except Exception:
             return JsonResponse({'error': 'Invalid page number'}, status=400)
 
-        # Формируем ответ
         data = {
             'reminders': [
                 {
@@ -180,6 +178,9 @@ class RemindersAPIView(View):
                     'is_completed': r.is_completed,
                     'is_sending': r.is_sending,
                     'sent_at': r.sent_at,
+                    'repeat_interval_minutes': r.repeat_interval_minutes,
+                    'repeat_count': r.repeat_count,
+                    'max_repeats': r.max_repeats,
                 }
                 for r in reminders_page
             ],
@@ -226,8 +227,9 @@ class ReminderUpdateView(View):
         try:
             data = json.loads(request.body)
 
-            # Обновляем поля
+            # Обновляем основные поля
             reminder.text = data.get('text', reminder.text)
+            
             # Обработка due_time: строку в datetime
             due_time_str = data.get('due_time')
             if due_time_str:
@@ -237,7 +239,7 @@ class ReminderUpdateView(View):
                 else:
                     return JsonResponse({'error': 'Invalid due_time format'}, status=400)
 
-            # Обновление ManyToMany требует особого подхода
+            # Обновление ManyToMany
             group_ids = [g['id'] for g in data.get('groups', [])]
             try:
                 group_ids = [int(id) for id in group_ids]
@@ -249,9 +251,22 @@ class ReminderUpdateView(View):
                 return JsonResponse({'error': 'Some group IDs do not exist'}, status=400)
             reminder.groups.set(groups)
 
-            # ✅ Обновляем is_completed и sent_at ЯВНО, если они пришли в запросе
+            # Обработка полей повторения
+            if 'repeat_interval_minutes' in data:
+                reminder.repeat_interval_minutes = data['repeat_interval_minutes']
+            
+            if 'max_repeats' in data:
+                reminder.max_repeats = data['max_repeats']
+            
+            # Сбрасываем счетчик повторений при изменении настроек повторения
+            if 'repeat_interval_minutes' in data or 'max_repeats' in data:
+                reminder.repeat_count = 0
+                logger.info(f"Reset repeat_count for reminder {pk} due to interval/max_repeats change")
+
+            # Обработка статусов
             if 'is_completed' in data:
                 reminder.is_completed = data['is_completed']
+                
             if 'sent_at' in data:
                 sent_at_val = data['sent_at']
                 if sent_at_val:
@@ -261,18 +276,21 @@ class ReminderUpdateView(View):
                     else:
                         return JsonResponse({'error': 'Invalid sent_at format'}, status=400)
                 else:
-                    reminder.sent_at = None # Явно сбрасываем в NULL
+                    reminder.sent_at = None
 
             reminder.save()
 
-            # Возвращаем обновлённый объект
+            # Возвращаем обновлённый объект с новыми полями
             updated_data = {
                 'id': reminder.id,
                 'text': reminder.text,
                 'groups': [{'id': g.id, 'name': g.name} for g in reminder.groups.all()],
                 'due_time': reminder.due_time.isoformat(),
                 'is_completed': reminder.is_completed,
-                'sent_at': reminder.sent_at.isoformat() if reminder.sent_at else None, # Возвращаем в ответе
+                'sent_at': reminder.sent_at.isoformat() if reminder.sent_at else None,
+                'repeat_interval_minutes': reminder.repeat_interval_minutes,
+                'repeat_count': reminder.repeat_count,
+                'max_repeats': reminder.max_repeats,
             }
             return JsonResponse(updated_data)
 
@@ -303,7 +321,6 @@ class SendDueRemindersAPIView(View):
 
             now = timezone.now()
 
-            # Атомарно помечаем как "в процессе отправки"
             with transaction.atomic():
                 try:
                     reminder = Reminder.objects.select_for_update().get(id=reminder_id)
@@ -319,7 +336,7 @@ class SendDueRemindersAPIView(View):
                     logger.info(f"Reminder {reminder_id} already being sent.")
                     return JsonResponse({'status': 'already_sending'})
 
-                cushion = timedelta(seconds=5)
+                cushion = timedelta(seconds=10)
                 if reminder.due_time > now + cushion:
                     logger.info(f"Reminder {reminder_id} is not due yet (due: {reminder.due_time}, now: {now}), cushion: {cushion}")
                     return JsonResponse({'status': 'not_due_yet'})
@@ -328,7 +345,6 @@ class SendDueRemindersAPIView(View):
                 reminder.is_sending = True
                 reminder.save()
 
-            # Получаем список пользователей
             user_ids = UserInGroup.objects.filter(
                 group__in=reminder.groups.all()
             ).values_list('telegram_id', flat=True)
@@ -342,23 +358,49 @@ class SendDueRemindersAPIView(View):
 
             logger.info(f"Sending reminder {reminder_id} to {len(user_ids_list)} users.")
             
-            # СОЗДАЕМ БОТА ТОЛЬКО ЗДЕСЬ
             bot = create_bot_with_proxy()
             
             try:
-                # Используем ту же функцию отправки
                 successful_ids = asyncio.run(send_reminders_batch(bot, [(reminder, user_ids_list)]))
                 
                 if reminder.id in successful_ids:
-                    # Помечаем как отправленное
-                    reminder.sent_at = now
-                    reminder.is_completed = True
-                    reminder.is_sending = False
-                    reminder.save()
-                    logger.info(f"Reminder {reminder_id} marked as sent and completed.")
-                    return JsonResponse({'status': 'sent'})
+                    # Обновляем напоминание с учетом повторений
+                    with transaction.atomic():
+                        reminder = Reminder.objects.select_for_update().get(id=reminder_id)
+                        reminder.repeat_count += 1
+                        reminder.sent_at = now
+                        
+                        # Проверяем, нужно ли повторять
+                        if (reminder.repeat_interval_minutes > 0 and 
+                            reminder.repeat_count < reminder.max_repeats):
+                            # Устанавливаем следующее время отправки
+                            next_due_time = now + timedelta(minutes=reminder.repeat_interval_minutes)
+                            
+                            reminder.due_time = next_due_time
+                            reminder.is_sending = False
+                            reminder.is_completed = False
+                            reminder.save()
+                            
+                            # Возвращаем обновленные данные
+                            updated_data = {
+                                'id': reminder.id,
+                                'due_time': reminder.due_time.isoformat(),
+                                'is_completed': reminder.is_completed,
+                                'is_sending': reminder.is_sending,
+                                'repeat_count': reminder.repeat_count,
+                                'sent_at': reminder.sent_at.isoformat() if reminder.sent_at else None,
+                            }
+                            logger.info(f"Reminder {reminder_id} scheduled for repeat at {next_due_time}. Count: {reminder.repeat_count}/{reminder.max_repeats}")
+                            return JsonResponse({'status': 'repeated', 'reminder': updated_data})
+                        else:
+                            # Достигли максимального количества повторов
+                            reminder.is_completed = True
+                            reminder.is_sending = False
+                            reminder.save()
+                            logger.info(f"Reminder {reminder_id} marked as sent and completed. Total sends: {reminder.repeat_count}")
+                            return JsonResponse({'status': 'sent'})
                 else:
-                    # Сбрасываем флаг отправки
+                    # Сбрасываем флаг отправки при неудаче
                     reminder.is_sending = False
                     reminder.save()
                     logger.error(f"Reminder {reminder_id} failed to send to all users")
@@ -366,6 +408,7 @@ class SendDueRemindersAPIView(View):
                     
             except Exception as e:
                 logger.error(f"Error sending reminder {reminder_id}: {e}")
+                # При любой ошибке сбрасываем флаг отправки
                 reminder.is_sending = False
                 reminder.save()
                 return JsonResponse({'error': str(e)}, status=500)
