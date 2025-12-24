@@ -535,12 +535,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         return;
                     }
                     
-                    // Преобразуем локальное время в UTC для отправки на сервер
                     const selectedTime = new Date(this.editingForm.absoluteTime + ':00');
-                    // Учитываем смещение временной зоны
-                    const timezoneOffset = selectedTime.getTimezoneOffset() * 60000;
-                    const utcDate = new Date(selectedTime.getTime() + timezoneOffset);
-                    dueTime = utcDate.toISOString();
+                    dueTime = selectedTime;
                 }
         
                 const payload = {

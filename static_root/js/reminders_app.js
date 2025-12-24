@@ -167,9 +167,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             switchTimeMode(mode) {
                 this.editingForm.timeMode = mode;
-                // if (mode === 'absolute') {
-                //     this.editingForm.absoluteTime = this.getCurrentDateTime();
-                // }
             },
 
             utcToLocal(utcString) {
@@ -350,7 +347,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     Object.values(this.reminderTimers).forEach(clearInterval);
                     this.reminderTimers = {};
                     this.reminders.forEach(reminder => {
-                        if (!reminder.is_completed) {
+                        if (!reminder.is_completed || reminder.repeat_count >= reminder.max_repeats) {
                             this.startReminderTimer(reminder);
                         }
                     });
@@ -541,9 +538,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Преобразуем локальное время в UTC для отправки на сервер
                     const selectedTime = new Date(this.editingForm.absoluteTime + ':00');
                     // Учитываем смещение временной зоны
-                    const timezoneOffset = selectedTime.getTimezoneOffset() * 60000;
-                    const utcDate = new Date(selectedTime.getTime() + timezoneOffset);
-                    dueTime = utcDate.toISOString();
+                    // const timezoneOffset = selectedTime.getTimezoneOffset() * 60000;
+                    // const utcDate = new Date(selectedTime.getTime());
+                    dueTime = selectedTime;
                 }
         
                 const payload = {
@@ -669,7 +666,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (result.status === 'sent') {
                         const reminder = this.reminders.find(r => r.id === reminderId);
                         if (reminder) {
-                            // reminder.is_completed = true;
+                            reminder.is_completed = true;
                             reminder.sent_at = new Date().toISOString();
                             // Останавливаем таймер для завершенного напоминания
                             if (this.reminderTimers[reminderId]) {
