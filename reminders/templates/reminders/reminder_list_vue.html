@@ -102,25 +102,28 @@
 
                         <!-- Относительное время -->
                         <div v-if="editingForm.timeMode === 'relative'" class="row g-2 mb-3">
-                            <div class="col-4">
-                                <label>Дни</label>
-                                <input v-model.number="editingForm.days" type="number" class="form-control" min="0" placeholder="Дни">
-                            </div>
-                            <div class="col-4">
-                                <label>Часы</label>
-                                <input v-model.number="editingForm.hours" type="number" class="form-control" min="0" placeholder="Часы">
-                            </div>
-                            <div class="col-4">
-                                <label>Минуты</label>
-                                <input v-model.number="editingForm.minutes" type="number" class="form-control" min="0" placeholder="Минуты">
-                            </div>
+                        <div class="col-4">
+                            <label>Дни</label>
+                            <input v-model.number="editingForm.days" type="number" class="form-control" min="0" placeholder="Дни"
+                                @wheel="handleNumberWheel" data-nav>
+                        </div>
+                        <div class="col-4">
+                            <label>Часы</label>
+                            <input v-model.number="editingForm.hours" type="number" class="form-control" min="0" placeholder="Часы"
+                                @wheel="handleNumberWheel" data-nav>
+                        </div>
+                        <div class="col-4">
+                            <label>Минуты</label>
+                            <input v-model.number="editingForm.minutes" type="number" class="form-control" min="0" placeholder="Минуты"
+                                @wheel="handleNumberWheel" data-nav>
+                        </div>
                         </div>
 
                         <!-- Абсолютное время -->
                         <div v-if="editingForm.timeMode === 'absolute'" class="mb-3">
-                            <label class="form-label">Дата и время</label>
-                            <input v-model="editingForm.absoluteTime" type="datetime-local" class="form-control">
-                            <small class="form-text text-muted">Можно выбрать любое время</small>
+                        <label class="form-label">Дата и время</label>
+                        <input v-model="editingForm.absoluteTime" type="datetime-local" class="form-control" data-nav>
+                        <small class="form-text text-muted">Можно выбрать любое время</small>
                         </div>
 
                         <!-- Повторение -->
@@ -139,7 +142,7 @@
                                 </div>
                                 <div class="col-md-6">
                                     <label>Количество повторов</label>
-                                    <input v-model.number="editingForm.maxRepeats" type="number" class="form-control" min="1" max="50" :disabled="editingForm.repeatInterval === 0">
+                                    <input v-model.number="editingForm.maxRepeats" type="number" class="form-control" min="1" max="1000" :disabled="editingForm.repeatInterval === 0" @wheel="handleNumberWheel">
                                     <small class="form-text text-muted" v-if="editingForm.repeatInterval > 0">
                                         Всего отправок: [[ editingForm.maxRepeats ]]
                                     </small>

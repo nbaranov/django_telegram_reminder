@@ -147,18 +147,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
             switchTimeMode(mode) {
                 this.editingForm.timeMode = mode;
-                if (mode === 'absolute') {
-                    this.editingForm.absoluteTime = this.getCurrentDateTime();
-                }
+                // if (mode === 'absolute') {
+                //     this.editingForm.absoluteTime = this.getCurrentDateTime();
+                // }
             },
 
             utcToLocal(utcString) {
                 if (!utcString) return this.getCurrentDateTime();
-                
                 const date = new Date(utcString);
-                const timezoneOffset = date.getTimezoneOffset() * 60000;
-                const localDate = new Date(date.getTime() - timezoneOffset);
-                return localDate.toISOString().slice(0, 16);
+                // Получаем строку вида "2025-12-25T13:00" (локальное время)
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                return `${year}-${month}-${day}T${hours}:${minutes}`;
             },
 
             loadFromStorage() {
@@ -190,6 +193,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Загружаем настройки формы
                 const savedFormSettings = localStorage.getItem(this.storageKeys.formSettings);
                 if (savedFormSettings) {
+                    console.log("Loaded Form")
+                    console.log(savedFormSettings)
                     try {
                         const formSettings = JSON.parse(savedFormSettings);
                         // Обновляем только те поля, которые не являются уникальными для каждого напоминания
@@ -197,6 +202,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         this.editingForm.hours = formSettings.hours || 0;
                         this.editingForm.minutes = formSettings.minutes || 5;
                         this.editingForm.timeMode = formSettings.timeMode || 'relative';
+                        this.editingForm.absoluteTime = formSettings.absoluteTime || this.getCurrentDateTime();
                         this.editingForm.repeatInterval = formSettings.repeatInterval || 0;
                         this.editingForm.maxRepeats = formSettings.maxRepeats || 1;
                     } catch (e) {
@@ -226,16 +232,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     localStorage.setItem(this.storageKeys.lastGroups, JSON.stringify(groupIds));
                 }
 
-                // Сохраняем настройки формы (кроме текста и absoluteTime)
+                // Сохраняем настройки формы (кроме текста)
                 const formSettings = {
                     days: this.editingForm.days,
                     hours: this.editingForm.hours,
                     minutes: this.editingForm.minutes,
                     timeMode: this.editingForm.timeMode,
+                    absoluteTime: this.editingForm.absoluteTime,
                     repeatInterval: this.editingForm.repeatInterval,
                     maxRepeats: this.editingForm.maxRepeats
                 };
                 localStorage.setItem(this.storageKeys.formSettings, JSON.stringify(formSettings));
+                console.log("Saved Form")
+                console.log(formSettings)
             },
 
             sortReminders(reminders) {
@@ -434,7 +443,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     hours: this.editingForm.hours,
                     minutes: this.editingForm.minutes,
                     timeMode: this.editingForm.timeMode,
-                    absoluteTime: this.getCurrentDateTime(),
+                    absoluteTime: this.editingForm.absoluteTime,
                     repeatInterval: this.editingForm.repeatInterval,
                     maxRepeats: this.editingForm.maxRepeats
                 };
@@ -704,9 +713,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     mode: 'create',
                     id: null,
                     text: '', 
-                    absoluteTime: this.getCurrentDateTime(), 
                 });
                 this.saveToStorage();
+            },
+
+            handleNumberWheel(e) {
+                e.preventDefault();
+                const input = e.target;
+                const step = parseFloat(input.step) || 1;
+                const delta = e.deltaY > 0 ? -step : step;
+                const newValue = (parseFloat(input.value) || 0) + delta;
+                // Ограничиваем, если нужно (например, не ниже 0)
+                input.value = Math.max(0, newValue);
+                // Обновляем модель Vue через событие
+                input.dispatchEvent(new Event('input', { bubbles: true }));
             },
 
             async deleteReminder(reminder) {
