@@ -86,6 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 return this.sortReminders(filtered);
             },
+
             repeatIntervalOptions() {
                 return [
                     { value: 0, label: 'Без повторения' },
@@ -100,6 +101,25 @@ document.addEventListener('DOMContentLoaded', () => {
                     { value: 10080, label: 'Раз в неделю' }
                 ];
             },
+
+            reminderRepeatBadgeClass() {
+                return (reminder) => {
+                    if (reminder.is_completed) {
+                        return 'bg-success';
+                    }
+
+                    const interval = reminder.repeat_interval_minutes || 0;
+                    const maxRepeats = reminder.max_repeats || 1;
+                    const sentCount = reminder.repeat_count || 0; 
+
+                    if (interval > 0 && maxRepeats > 1 && sentCount > 0 && sentCount < maxRepeats) {
+                        return 'bg-danger'; //
+                    }
+
+                    return 'bg-warning';
+                };
+            },
+
             statusLabels() {
                 return {
                     pending: 'В ожидании',
@@ -649,7 +669,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (result.status === 'sent') {
                         const reminder = this.reminders.find(r => r.id === reminderId);
                         if (reminder) {
-                            reminder.is_completed = true;
+                            // reminder.is_completed = true;
                             reminder.sent_at = new Date().toISOString();
                             // Останавливаем таймер для завершенного напоминания
                             if (this.reminderTimers[reminderId]) {

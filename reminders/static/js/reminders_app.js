@@ -86,6 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 return this.sortReminders(filtered);
             },
+
             repeatIntervalOptions() {
                 return [
                     { value: 0, label: 'Без повторения' },
@@ -100,6 +101,25 @@ document.addEventListener('DOMContentLoaded', () => {
                     { value: 10080, label: 'Раз в неделю' }
                 ];
             },
+
+            reminderRepeatBadgeClass() {
+                return (reminder) => {
+                    if (reminder.is_completed) {
+                        return 'bg-success';
+                    }
+
+                    const interval = reminder.repeat_interval_minutes || 0;
+                    const maxRepeats = reminder.max_repeats || 1;
+                    const sentCount = reminder.repeat_count || 0; 
+
+                    if (interval > 0 && maxRepeats > 1 && sentCount > 0 && sentCount < maxRepeats) {
+                        return 'bg-danger'; //
+                    }
+
+                    return 'bg-warning';
+                };
+            },
+
             statusLabels() {
                 return {
                     pending: 'В ожидании',
@@ -147,9 +167,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             switchTimeMode(mode) {
                 this.editingForm.timeMode = mode;
-                // if (mode === 'absolute') {
-                //     this.editingForm.absoluteTime = this.getCurrentDateTime();
-                // }
             },
 
             utcToLocal(utcString) {
@@ -330,7 +347,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     Object.values(this.reminderTimers).forEach(clearInterval);
                     this.reminderTimers = {};
                     this.reminders.forEach(reminder => {
-                        if (!reminder.is_completed) {
+                        if (!reminder.is_completed || reminder.repeat_count >= reminder.max_repeats) {
                             this.startReminderTimer(reminder);
                         }
                     });

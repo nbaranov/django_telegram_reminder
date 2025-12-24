@@ -206,8 +206,10 @@
                             [[ formatTimeLeft(reminder.due_time, reminder.id) ]]
                         </td>
                         <td v-if="!editingReminder || editingReminder.id !== reminder.id">
-                            <span v-if="reminder.repeat_interval_minutes > 0" class="badge bg-warning">
-                                [[ formatRepeatInterval(reminder.repeat_interval_minutes) ]] × [[ reminder.repeat_count ]]/[[ reminder.max_repeats ]]
+                            <span v-if="reminder.repeat_interval_minutes > 0" 
+                                :class="['badge', reminderRepeatBadgeClass(reminder)]">
+                            [[ formatRepeatInterval(reminder.repeat_interval_minutes) ]], 
+                            [[ (reminder.repeat_count || 0) ]]/[[ reminder.max_repeats ]]
                             </span>
                             <span v-else class="text-muted">—</span>
                         </td>
